@@ -11,3 +11,4 @@ export * from './scoring';
 export * from './blueprint';
 export * from './profile';
 export * from './weak-questions';
+export * from './speech';

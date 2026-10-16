@@ -235,3 +235,26 @@ interface InterviewQuestion {
 ## 七、明确不做
 
 语音（ASR/TTS）、切屏检测、题目跨场次复用（重练除外，它是复制不是复用）、RAG / 向量检索、多租户 / 团队协作 / 权限体系、投递 / 职位发布 / 双端撮合。
+
+## 八、执行进度
+
+| 阶段 | 状态 | 说明 |
+|---|---|---|
+| 0 计划落档 | ✅ 完成 | 本文件、两条 ADR、GLOSSARY 补词、设计文档转「已确认」 |
+| 1 止漏 | ✅ 完成 | 控制指令落库、消息 id 与服务端一致、题数硬上限、列表分数与进度、删 systemPrompt、拖拽排序；补 repository/进度测试 |
+| 2 内核 | ✅ 完成（有过渡项） | `src/lib/interview-core/` 全部文件 + 内核测试；两层坐标目录、岗位族、服务端算分、蓝图泛化、画像、错题本；类型改为从内核再导出；删 `dimension-guides.ts` |
+| 3 翻转 | ⬜ 未开始 | 表重命名/新增列、路由与 i18n 迁移、模式切换、死代码清理 |
+| 4 可信报告 | ⬜ 未开始 | 强 schema、单题分链路、两段式报告、追溯 |
+| 5 蓝图出题 | ⬜ 未开始 | 候选人侧蓝图、入 prompt 三分类、槽位驱动对话、`DROP COLUMN questions` |
+| 6 真实约束 | ⬜ 未开始 | 限时/超时/不可回改/压力面/反问/轮次状态 |
+| 7 资产 | ⬜ 未开始 | 画像与错题本 API 与 UI、重练 |
+| 8 语音 | 🟡 仅接口 | `interview-core/speech.ts` 预留 `SpeechToText` 与「转写修正 ≠ 答案修改」裁决 |
+
+### 阶段 2 的过渡项（阶段 3/5 收尾）
+
+1. **面试官视角的维度目录仍是旧的 7 个 key，且全部标为族层**（`dimensions.ts` 显式注明）。新代码请用 `resolveDimensions` / `planQuestionCounts`；旧目录会在阶段 3/5 换成两层坐标。
+2. **面试官视角 UI 仍把 `weight` 当题数**（`dimension-chips.tsx` 的滑块）。内核已把两者拆开（`weight` 只表评分口径），UI 待阶段 5 改成逐维度 `questionCounts`。
+3. **`validateBlueprint` 保留了一个 `isGoRole` 适配层**（`src/lib/ai/recruit-blueprint.ts`），内部已改调内核新签名；正则在阶段 2 删除，只剩一个 `detectGoRole` 兼容壳。
+4. **新维度 key（`general_*`、前端/数据/QA 族）的 i18n 文案尚未补齐**，阶段 3 统一补进 `messages/{zh,en}.json` 并同步命名空间 `recruit` → `perspective`。
+5. **报告本地形态仍叫 `ReportDimensionScore` / `ReportRoundEvaluation` / `ReportQuestionEvaluation`**，等阶段 4 换成内核 `DimensionScore` / `RoundEvaluation` / `QuestionEvaluation`。
+6. **`recruit_candidates.questions` JSON 仍在读写**；`interview_questions` 表、回填与 `DROP COLUMN` 在阶段 3/5 完成。
