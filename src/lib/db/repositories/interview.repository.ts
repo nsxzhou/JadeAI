@@ -1,6 +1,7 @@
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, inArray } from 'drizzle-orm';
 import { db } from '../index';
-import { interviewSessions, interviewRounds, interviewMessages, interviewReports } from '../schema';
+import { interviewSessions, interviewRounds, interviewMessages, interviewReports, interviewQuestions } from '../schema';
+import { questionToRow, type InterviewQuestionRow } from '@/lib/interview-core/legacy-questions';
 import type {
   InterviewerConfig,
   InterviewSessionStatus,
@@ -22,6 +23,12 @@ export const interviewRepository = {
     jobDescription: string;
     jobTitle: string;
     selectedInterviewers: InterviewerConfig[];
+    roleFamilyKey?: string | null;
+    primaryStack?: string | null;
+    questionCountPreset?: string | null;
+    stressLevel?: string;
+    totalTimeLimitSec?: number | null;
+    startedAt?: Date | null;
   }) {
     const id = crypto.randomUUID();
     await db.insert(interviewSessions).values({
@@ -31,6 +38,12 @@ export const interviewRepository = {
       jobDescription: data.jobDescription,
       jobTitle: data.jobTitle,
       selectedInterviewers: data.selectedInterviewers as any,
+      roleFamilyKey: data.roleFamilyKey ?? null,
+      primaryStack: data.primaryStack ?? null,
+      questionCountPreset: data.questionCountPreset ?? null,
+      stressLevel: data.stressLevel ?? 'gentle',
+      totalTimeLimitSec: data.totalTimeLimitSec ?? null,
+      startedAt: data.startedAt ?? null,
     } as any);
     return this.findSession(id);
   },
@@ -115,6 +128,26 @@ export const interviewRepository = {
     await db.update(interviewRounds).set({ status, updatedAt: new Date() }).where(eq(interviewRounds.id, roundId));
   },
 
+  /** 轮次开始/结束时间，供转场与计时展示。 */
+  async markRoundStarted(roundId: string) {
+    await db
+      .update(interviewRounds)
+      .set({ startedAt: new Date(), updatedAt: new Date() })
+      .where(eq(interviewRounds.id, roundId));
+  },
+
+  async markRoundFinished(roundId: string) {
+    await db
+      .update(interviewRounds)
+      .set({ finishedAt: new Date(), status: 'completed', updatedAt: new Date() })
+      .where(eq(interviewRounds.id, roundId));
+  },
+
+  /** 题数在生成之后才知道，轮次的 maxQuestions 生成完回写。 */
+  async updateRoundMaxQuestions(roundId: string, maxQuestions: number) {
+    await db.update(interviewRounds).set({ maxQuestions, updatedAt: new Date() }).where(eq(interviewRounds.id, roundId));
+  },
+
   /** 递增并返回新值，调用方据此判断是否到达本轮题数上限。 */
   async incrementQuestionCount(roundId: string): Promise<number> {
     const rows = await db.select({ questionCount: interviewRounds.questionCount }).from(interviewRounds).where(eq(interviewRounds.id, roundId)).limit(1);
@@ -136,6 +169,8 @@ export const interviewRepository = {
     role: InterviewMessageRole;
     content: string;
     metadata?: InterviewMessageMetadata;
+    /** 这条消息属于哪道题（含追问消息），报告追溯靠它 */
+    questionId?: string | null;
   }) {
     const id = data.id ?? crypto.randomUUID();
     await db.insert(interviewMessages).values({
@@ -144,6 +179,7 @@ export const interviewRepository = {
       role: data.role,
       content: data.content,
       metadata: (data.metadata ?? {}) as any,
+      questionId: data.questionId ?? null,
     } as any);
     const rows = await db.select().from(interviewMessages).where(eq(interviewMessages.id, id)).limit(1);
     return rows[0] ?? null;
@@ -179,6 +215,73 @@ export const interviewRepository = {
     const merged = { ...existing, ...patch };
     await db.update(interviewMessages).set({ metadata: merged as any }).where(eq(interviewMessages.id, messageId));
     return merged;
+  },
+
+  // ── Questions ───────────────────────────────────────────────────────────────
+
+  /** 整场题目（候选人侧），按所属轮次与顺序返回。 */
+  async findQuestionsBySessionId(sessionId: string) {
+    const rounds = await this.findRoundsBySessionId(sessionId);
+    if (rounds.length === 0) return [];
+    const roundIds = rounds.map((round: { id: string }) => round.id);
+    return db
+      .select()
+      .from(interviewQuestions)
+      .where(inArray(interviewQuestions.roundId, roundIds))
+      .orderBy(interviewQuestions.sortOrder);
+  },
+
+  async findQuestionsByRoundId(roundId: string) {
+    return db
+      .select()
+      .from(interviewQuestions)
+      .where(eq(interviewQuestions.roundId, roundId))
+      .orderBy(interviewQuestions.sortOrder);
+  },
+
+  /** 整批落库。调用方保证「要么全落、要么不落」。 */
+  async insertQuestions(rows: InterviewQuestionRow[]) {
+    if (rows.length === 0) return;
+    await db.insert(interviewQuestions).values(rows as any);
+  },
+
+  /** 更新单题（答录、评分、标记）。只允许改白名单字段。 */
+  async updateQuestion(
+    questionId: string,
+    data: Partial<{
+      answer: string;
+      status: string;
+      timeSpentSec: number | null;
+      timedOut: boolean;
+      tier: string | null;
+      score: number | null;
+      markedWeak: boolean;
+    }>,
+  ) {
+    await db
+      .update(interviewQuestions)
+      .set({
+        ...data,
+        // 两个布尔列在两种方言下分别是 boolean / integer，统一转成 0/1 由 drizzle 处理
+        ...(data.timedOut !== undefined ? { timedOut: data.timedOut ? 1 : 0 } : {}),
+        ...(data.markedWeak !== undefined ? { markedWeak: data.markedWeak ? 1 : 0 } : {}),
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(interviewQuestions.id, questionId));
+  },
+
+  async setSessionCurrentQuestion(sessionId: string, questionId: string | null) {
+    await db
+      .update(interviewSessions)
+      .set({ currentQuestionId: questionId, updatedAt: new Date() })
+      .where(eq(interviewSessions.id, sessionId));
+  },
+
+  async setSessionStartedAt(sessionId: string, startedAt: Date) {
+    await db
+      .update(interviewSessions)
+      .set({ startedAt, updatedAt: new Date() })
+      .where(eq(interviewSessions.id, sessionId));
   },
 
   // ── Reports ──────────────────────────────────────────────────────────────────

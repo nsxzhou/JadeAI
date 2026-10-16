@@ -16,6 +16,7 @@ export type InterviewMessageRole = 'interviewer' | 'candidate' | 'system';
 import type {
   DimensionScore as DomainDimensionScore,
   ImprovementItem as DomainImprovementItem,
+  InterviewQuestion as DomainInterviewQuestion,
 } from '@/lib/interview-core/types';
 
 /** 领域名词统一从共享内核再导出，避免两套定义并存。 */
@@ -63,6 +64,8 @@ export interface InterviewRound {
   maxQuestions: number;
   summary: RoundSummary | null;
   messages?: InterviewMessage[];
+  /** 本轮的题目（来自 interview_questions），进度按它算而不是按消息条数 */
+  questions?: DomainInterviewQuestion[];
   createdAt: Date | string;
   updatedAt: Date | string;
 }

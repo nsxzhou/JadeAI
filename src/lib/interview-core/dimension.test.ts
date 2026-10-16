@@ -4,6 +4,7 @@ import {
   allocateQuestions,
   planQuestionCounts,
   resolveDimensions,
+  splitQuestionCountAcrossRounds,
   toDimensionConfigs,
 } from './dimension';
 import type { DimensionConfig } from './types';
@@ -119,5 +120,22 @@ describe('toDimensionConfigs', () => {
     const configs = toDimensionConfigs(resolveDimensions('other', 'none'), (key) => `label:${key}`);
     expect(configs[0]).toMatchObject({ key: 'general_communication', layer: 'general', weight: 1, custom: false });
     expect(configs[0].label).toBe('label:general_communication');
+  });
+});
+
+describe('splitQuestionCountAcrossRounds', () => {
+  it('各轮之和精确等于总数，轮间最多差 1', () => {
+    expect(splitQuestionCountAcrossRounds(6, 2)).toEqual([3, 3]);
+    expect(splitQuestionCountAcrossRounds(10, 3)).toEqual([4, 3, 3]);
+    expect(splitQuestionCountAcrossRounds(7, 3).reduce((a, b) => a + b, 0)).toBe(7);
+    expect(splitQuestionCountAcrossRounds(15, 4)).toEqual([4, 4, 4, 3]);
+  });
+
+  it('题数少于轮数时后面的轮次拿 0 题', () => {
+    expect(splitQuestionCountAcrossRounds(1, 3)).toEqual([1, 0, 0]);
+  });
+
+  it('没有轮次时返回空数组', () => {
+    expect(splitQuestionCountAcrossRounds(10, 0)).toEqual([]);
   });
 });

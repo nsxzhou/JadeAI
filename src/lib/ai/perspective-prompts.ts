@@ -161,7 +161,30 @@ export interface QuestionsPromptInput {
   resumeText: string;
   dimensions: DimensionConfig[];
   questionCount: number;
+  /**
+   * 候选人侧：逐维度题数（`planQuestionCounts` 的结果）。
+   * 给定时优先于「按评分权重推导」——两层坐标下通用层必须恒定全覆盖，
+   * 权重分配做不到这一点。
+   */
+  questionCounts?: Record<string, number>;
+  /** 该岗位族允许的题型；缺省用旧的 7 类清单（面试官视角的历史行为） */
+  allowedCategories?: string[];
+  /** 该岗位族必考题型及最少题数；缺省用旧的 Go 清单 */
+  requiredCategoryMinimums?: Array<{ category: string; min: number }>;
+  /** 岗位族名，告知模型这是哪一类岗位 */
+  roleFamilyKey?: string;
 }
+
+/** 旧目录的题型清单，面试官视角仍按它出题。 */
+const LEGACY_ALLOWED_CATEGORIES = [
+  'go_fundamentals',
+  'backend_fundamentals',
+  'middleware_database',
+  'project_deep_dive',
+  'system_scenario',
+  'communication_pressure',
+  'hr_motivation',
+];
 
 function buildPortfolioRules(questionCount: number): string {
   const minimum = (share: number) => Math.max(1, Math.round(questionCount * share));
@@ -186,7 +209,7 @@ export function buildInterviewBlueprintPrompt(input: QuestionsPromptInput): {
   system: string;
   prompt: string;
 } {
-  const allocation = allocateQuestions(input.dimensions, input.questionCount);
+  const allocation = input.questionCounts ?? allocateQuestions(input.dimensions, input.questionCount);
   const dimensionLines = input.dimensions
     .map((dimension) => {
       const description = resolveDimensionGuide(dimension) || '(no description configured)';
@@ -207,6 +230,22 @@ export function buildInterviewBlueprintPrompt(input: QuestionsPromptInput): {
 - at least 1 communication_pressure slot
 - at least 1 hr_motivation slot`
     : '';
+
+  // 候选人侧：岗位族与两层坐标由服务端给定，题型清单与必考题型都从岗位族来。
+  // 缺省分支保持面试官视角的旧行为，其 prompt 文本逐字不变。
+  const roleLine = input.roleFamilyKey
+    ? `The server classified this as a ${input.roleFamilyKey} role.`
+    : goMinimum;
+  const allowedCategoryLine = (input.allowedCategories ?? LEGACY_ALLOWED_CATEGORIES).join(', ');
+  const portfolioRequirement = input.requiredCategoryMinimums
+    ? input.requiredCategoryMinimums
+      .map((entry) => `- at least ${entry.min} ${entry.category} slot${entry.min > 1 ? 's' : ''}`)
+      .join('\n')
+    : requiredGoPortfolio;
+  const requiredPortfolioBlock = portfolioRequirement
+    ? (input.requiredCategoryMinimums ? `Required interview portfolio:\n${portfolioRequirement}` : portfolioRequirement)
+    : '';
+
   const portfolioRules = buildPortfolioRules(input.questionCount);
   const maxResume = Math.floor(input.questionCount * 0.4);
   const minJd = Math.ceil(input.questionCount * 0.35);
@@ -226,11 +265,10 @@ First extract concise, explicit facts into three separate lists:
 Never convert an inference into a résumé fact. Do not invent metrics, architecture, incidents, ownership,
 tools, scale, outcomes, or a candidate's experience.
 
-Then create exactly ${input.questionCount} slots. ${goMinimum}
+Then create exactly ${input.questionCount} slots. ${roleLine}
 
 Each slot must use one configured dimension key, one allowed category, one allowed source, a concrete topic,
-a concrete evidence string, and a difficulty. Allowed categories: go_fundamentals, backend_fundamentals,
-middleware_database, project_deep_dive, system_scenario, communication_pressure, hr_motivation. Allowed
+a concrete evidence string, and a difficulty. Allowed categories: ${allowedCategoryLine}. Allowed
 sources: resume, jd, gap. For a fundamentals slot, express its topic as mechanism → observable symptom →
 engineering decision. Allowed difficulty values: easy | medium | hard. Cover important evidence without
 duplicating the same event or knowledge point.
@@ -249,7 +287,7 @@ Prompt/API integration, Git/automation, or other explicit JD requirements.
 
 ${portfolioRules}
 
-${requiredGoPortfolio}
+${requiredPortfolioBlock}
 
 If gaps is non-empty, satisfy the mandatory gap quota above. If gaps is empty, include at least one jd system_scenario slot instead, and do not create a gap slot.
 

@@ -207,7 +207,10 @@ export function InterviewRoom({ sessionId, initialMessages }: InterviewRoomProps
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-3 h-[calc(100dvh-120px)] md:h-[calc(100vh-180px)]">
       <ProgressBar onSwitchRound={handleSwitchRound} />
-      <InterviewerBanner config={interviewerConfig} questionCount={messages.filter((m) => m.role === 'assistant').length} />
+      <InterviewerBanner
+        config={interviewerConfig}
+        questionCount={(currentRound?.questions ?? []).filter((question) => (question.status ?? 'pending') !== 'pending').length}
+      />
       <MessageList messages={messages} interviewerConfig={interviewerConfig} />
       {isLoading && (
         <div className="px-4">

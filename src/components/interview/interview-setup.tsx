@@ -9,7 +9,41 @@ import { ResumeSelector } from './resume-selector';
 import { InterviewerPicker } from './interviewer-picker';
 import { useRouter } from '@/i18n/routing';
 import { getAIHeaders } from '@/stores/settings-store';
+import { cn } from '@/lib/utils';
 import type { InterviewerConfig } from '@/types/interview';
+import type { QuestionCountPreset, StressLevel } from '@/lib/interview-core/types';
+
+const PRESETS: QuestionCountPreset[] = ['short', 'standard', 'long'];
+const STRESS_LEVELS: StressLevel[] = ['gentle', 'standard', 'sharp'];
+const ROLE_FAMILIES = ['auto', 'backend', 'frontend', 'data_algo', 'qa_infra', 'other'] as const;
+
+/** 三个选项以内用分段按钮，比下拉少一次点击，也能一眼看到全部选项。 */
+function ChoiceRow<T extends string>({ options, value, onChange, labelOf }: {
+  options: readonly T[];
+  value: T;
+  onChange: (next: T) => void;
+  labelOf: (option: T) => string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => onChange(option)}
+          className={cn(
+            'cursor-pointer rounded-lg border px-3 py-1.5 text-xs transition-colors',
+            value === option
+              ? 'border-brand bg-brand/10 font-medium text-brand'
+              : 'border-zinc-200 text-zinc-600 hover:border-zinc-300 dark:border-zinc-700 dark:text-zinc-300',
+          )}
+        >
+          {labelOf(option)}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function InterviewSetup() {
   const t = useTranslations('interview.setup');
@@ -18,6 +52,10 @@ export function InterviewSetup() {
   const [jd, setJd] = useState('');
   const [resumeId, setResumeId] = useState<string | undefined>();
   const [selectedInterviewers, setSelectedInterviewers] = useState<InterviewerConfig[]>([]);
+  // 题数预设与压力面强度是每场策略；岗位族默认交给服务端从静态清单里选。
+  const [preset, setPreset] = useState<QuestionCountPreset>('standard');
+  const [stress, setStress] = useState<StressLevel>('gentle');
+  const [roleFamily, setRoleFamily] = useState<(typeof ROLE_FAMILIES)[number]>('auto');
   const [isCreating, setIsCreating] = useState(false);
 
   const canStart = jd.trim().length > 0 && selectedInterviewers.length > 0;
@@ -40,6 +78,9 @@ export function InterviewSetup() {
           jobTitle: title.trim() || jd.split('\n')[0].slice(0, 100) || 'Interview',
           resumeId,
           interviewers: selectedInterviewers,
+          questionCountPreset: preset,
+          stressLevel: stress,
+          ...(roleFamily === 'auto' ? {} : { roleFamilyKey: roleFamily }),
         }),
       });
 
@@ -74,6 +115,29 @@ export function InterviewSetup() {
         </div>
         <JDInput value={jd} onChange={setJd} />
         <ResumeSelector value={resumeId} onChange={setResumeId} />
+
+        <div className="space-y-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+          <div>
+            <div className="mb-2 text-sm font-semibold">{t('questionCountLabel')}</div>
+            <ChoiceRow options={PRESETS} value={preset} onChange={setPreset} labelOf={(p) => t(`presets.${p}`)} />
+          </div>
+          <div>
+            <div className="mb-2 text-sm font-semibold">{t('stressLabel')}</div>
+            <ChoiceRow options={STRESS_LEVELS} value={stress} onChange={setStress} labelOf={(s) => t(`stressLevels.${s}`)} />
+            <p className="mt-2 text-xs text-zinc-500">{t('stressHint')}</p>
+          </div>
+          <div>
+            <div className="mb-2 text-sm font-semibold">{t('roleFamilyLabel')}</div>
+            <ChoiceRow
+              options={ROLE_FAMILIES}
+              value={roleFamily}
+              onChange={setRoleFamily}
+              labelOf={(key) => t(`roleFamilies.${key}`)}
+            />
+            <p className="mt-2 text-xs text-zinc-500">{t('roleFamilyHint')}</p>
+          </div>
+        </div>
+
         <InterviewerPicker selected={selectedInterviewers} onChange={setSelectedInterviewers} />
       </div>
       <div className="mt-8 px-1">

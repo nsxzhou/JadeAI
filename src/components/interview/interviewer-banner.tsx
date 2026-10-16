@@ -14,6 +14,8 @@ export function InterviewerBanner({ config, questionCount }: InterviewerBannerPr
   const t = useTranslations('interview.interviewers');
   const { rounds, currentRoundIndex } = useInterviewStore();
   const currentRound = rounds[currentRoundIndex];
+  // 题数以蓝图定下的槽位为准；老会话没有题目时退回 maxQuestions。
+  const totalQuestions = currentRound?.questions?.length ?? currentRound?.maxQuestions ?? 10;
 
   return (
     <div className="flex items-center gap-3 rounded-xl border border-brand-muted bg-gradient-to-r from-brand-muted/80 to-white p-3 dark:border-brand-muted dark:from-brand-muted/30 dark:to-zinc-900">
@@ -31,7 +33,7 @@ export function InterviewerBanner({ config, questionCount }: InterviewerBannerPr
       </div>
       <div className="text-center">
         <div className="text-xl font-bold text-brand">{questionCount}</div>
-        <div className="text-[10px] text-zinc-400">{currentRound?.maxQuestions ?? 10} 题</div>
+        <div className="text-[10px] text-zinc-400">/ {totalQuestions} 题</div>
       </div>
     </div>
   );

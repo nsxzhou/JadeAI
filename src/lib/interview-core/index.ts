@@ -12,4 +12,5 @@ export * from './blueprint';
 export * from './profile';
 export * from './weak-questions';
 export * from './legacy-questions';
+export * from './turn';
 export * from './speech';

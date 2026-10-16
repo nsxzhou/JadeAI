@@ -23,11 +23,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const rounds = await interviewRepository.findRoundsBySessionId(id);
   const report = await interviewRepository.findReportBySessionId(id);
 
-  // Include messages for each round (needed for resume/history)
+  // Include messages and questions for each round (needed for resume/history and for
+  // deciding whether the session still needs its question plan generated).
   const roundsWithMessages = await Promise.all(
     rounds.map(async (round: any) => {
-      const messages = await interviewRepository.findMessagesByRoundId(round.id);
-      return { ...round, messages };
+      const [messages, questions] = await Promise.all([
+        interviewRepository.findMessagesByRoundId(round.id),
+        interviewRepository.findQuestionsByRoundId(round.id),
+      ]);
+      return { ...round, messages, questions };
     })
   );
 

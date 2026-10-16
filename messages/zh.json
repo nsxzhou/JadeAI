@@ -837,7 +837,30 @@
         "personality": "性格特征",
         "personalityPlaceholder": "如：严谨、注重细节",
         "add": "添加"
-      }
+      },
+      "questionCountLabel": "题数",
+      "presets": {
+        "short": "短 · 6 题",
+        "standard": "标准 · 10 题",
+        "long": "长 · 15 题"
+      },
+      "stressLabel": "压力面强度",
+      "stressLevels": {
+        "gentle": "温和（默认）",
+        "standard": "标准",
+        "sharp": "尖锐"
+      },
+      "stressHint": "温和也会抓「大概 / 差不多 / 我们团队」这类模糊表述，逼出确切数字和个人贡献；尖锐只调强度，不做羞辱式追问。",
+      "roleFamilyLabel": "目标岗位族",
+      "roleFamilies": {
+        "auto": "自动识别",
+        "backend": "后端",
+        "frontend": "前端",
+        "data_algo": "数据 / 算法",
+        "qa_infra": "测试 / 运维",
+        "other": "其他"
+      },
+      "roleFamilyHint": "岗位族决定族层评分坐标与必考题型；自动识别由模型从清单里选，识别不出会兜底为「其他」。"
     },
     "room": {
       "round": "第 {current} 轮 / 共 {total} 轮",
@@ -855,7 +878,8 @@
       "roundComplete": "本轮面试结束",
       "allComplete": "所有面试轮次已完成",
       "generateReport": "生成面试报告",
-      "generatingReport": "正在生成报告..."
+      "generatingReport": "正在生成报告...",
+      "preparingQuestions": "正在按目标岗位与简历出题…"
     },
     "report": {
       "title": "面试报告",

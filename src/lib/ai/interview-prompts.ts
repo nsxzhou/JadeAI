@@ -1,5 +1,12 @@
 import type { InterviewerConfig } from '@/types/interview';
 
+export interface InterviewSlotPrompt {
+  question: string;
+  intent: string;
+  rubric: { excellent: string; pass: string; fail: string };
+  followUps: string[];
+}
+
 export function buildInterviewSystemPrompt(params: {
   interviewer: InterviewerConfig;
   jobDescription: string;
@@ -7,9 +14,14 @@ export function buildInterviewSystemPrompt(params: {
   maxQuestions: number;
   /** 这一问就是本轮最后一题：必须收尾，不能继续抛新题。 */
   isFinalQuestion?: boolean;
+  /**
+   * 蓝图定好的当前槽位。给定时模型只决定「怎么问、追问多深」，
+   * 不再自行决定问什么、也不再自行换方向。
+   */
+  currentSlot?: InterviewSlotPrompt | null;
   locale: string;
 }) {
-  const { interviewer, jobDescription, resumeContent, maxQuestions, isFinalQuestion, locale } = params;
+  const { interviewer, jobDescription, resumeContent, maxQuestions, isFinalQuestion, currentSlot, locale } = params;
   const lang = locale === 'zh' ? '中文' : 'English';
 
   if (locale === 'zh') {
@@ -30,7 +42,7 @@ ${interviewer.style}
 
 # 面试上下文
 
-## 本轮考察重点
+## 本轮提问侧重（决定怎么问、用什么风格，不决定评分坐标）
 ${interviewer.focusAreas.join('、')}
 
 ## 招聘岗位 JD
@@ -38,6 +50,22 @@ ${jobDescription}
 
 ## 候选人简历
 ${resumeContent ? resumeContent : '候选人未提供简历，请根据岗位要求从零开始考察。'}
+${currentSlot ? `
+---
+
+# 本轮当前题目（已由出题阶段定好，不要自行更换方向）
+
+题干：${currentSlot.question}
+考察意图：${currentSlot.intent}
+评分标准：
+- 优秀：${currentSlot.rubric.excellent}
+- 合格：${currentSlot.rubric.pass}
+- 不合格：${currentSlot.rubric.fail}
+${currentSlot.followUps.length ? `追问阶梯：\n${currentSlot.followUps.map((f) => `- ${f}`).join('\n')}` : ''}
+
+你只决定「怎么问、追问多深」：把题干用你的口语说出来，根据候选人的回答往深处追。
+除非候选人明确要求跳过并换题，不要换到别的方向；换方向必须走显式的「跳过并换题」。
+` : ''}
 
 ---
 
@@ -93,7 +121,7 @@ ${interviewer.style}
 
 # Interview Context
 
-## Focus Areas for This Round
+## Focus of this round (shapes how you ask, not what gets scored)
 ${interviewer.focusAreas.join(', ')}
 
 ## Job Description
@@ -101,6 +129,22 @@ ${jobDescription}
 
 ## Candidate Resume
 ${resumeContent ? resumeContent : 'No resume provided. Assess the candidate based on the job requirements alone.'}
+${currentSlot ? `
+---
+
+# Current question (already decided by the planning stage — do not change direction)
+
+Question: ${currentSlot.question}
+What it probes: ${currentSlot.intent}
+Rubric:
+- Excellent: ${currentSlot.rubric.excellent}
+- Pass: ${currentSlot.rubric.pass}
+- Fail: ${currentSlot.rubric.fail}
+${currentSlot.followUps.length ? `Follow-up ladder:\n${currentSlot.followUps.map((f) => `- ${f}`).join('\n')}` : ''}
+
+You decide only HOW to ask and how deep to follow up: say the question in your own voice, then probe based on the answer.
+Do not switch direction unless the candidate explicitly asks to skip and move on.
+` : ''}
 
 ---
 

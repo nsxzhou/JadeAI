@@ -837,7 +837,30 @@
         "personality": "Personality",
         "personalityPlaceholder": "e.g., Rigorous, detail-oriented",
         "add": "Add"
-      }
+      },
+      "questionCountLabel": "Questions",
+      "presets": {
+        "short": "Short · 6",
+        "standard": "Standard · 10",
+        "long": "Long · 15"
+      },
+      "stressLabel": "Pressure level",
+      "stressLevels": {
+        "gentle": "Gentle (default)",
+        "standard": "Standard",
+        "sharp": "Sharp"
+      },
+      "stressHint": "Gentle still pins down vague answers (\"about\", \"roughly\", \"our team\") to force exact numbers and personal contribution. Sharp only turns up the intensity — never humiliating.",
+      "roleFamilyLabel": "Target role family",
+      "roleFamilies": {
+        "auto": "Detect automatically",
+        "backend": "Backend",
+        "frontend": "Frontend",
+        "data_algo": "Data / Algorithms",
+        "qa_infra": "QA / Infra",
+        "other": "Other"
+      },
+      "roleFamilyHint": "The role family decides the family-layer scoring axes and required question types. Auto-detect has the model pick from a fixed list, falling back to \"Other\"."
     },
     "room": {
       "round": "Round {current} / {total}",
@@ -855,7 +878,8 @@
       "roundComplete": "This round is complete",
       "allComplete": "All interview rounds completed",
       "generateReport": "Generate Report",
-      "generatingReport": "Generating report..."
+      "generatingReport": "Generating report...",
+      "preparingQuestions": "Planning questions from the target role and your resume…"
     },
     "report": {
       "title": "Interview Report",

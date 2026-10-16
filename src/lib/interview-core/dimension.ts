@@ -234,3 +234,18 @@ export function planQuestionCounts(params: {
 export function totalQuestions(counts: Record<string, number>): number {
   return Object.values(counts).reduce((sum, n) => sum + n, 0);
 }
+
+/**
+ * 把整场题数按轮次切开，轮次之间最多差 1 题，各值与总数精确相等。
+ *
+ * 题目在生成之后才存在，所以轮次的 `maxQuestions` 必须先由这个函数定下来，
+ * 生成完再按同样的切片把题目分配到轮。
+ */
+export function splitQuestionCountAcrossRounds(total: number, roundCount: number): number[] {
+  const rounds = Math.max(0, Math.floor(roundCount));
+  if (rounds === 0) return [];
+  const safeTotal = Math.max(0, Math.floor(total));
+  const base = Math.floor(safeTotal / rounds);
+  const remainder = safeTotal % rounds;
+  return Array.from({ length: rounds }, (_, index) => base + (index < remainder ? 1 : 0));
+}
