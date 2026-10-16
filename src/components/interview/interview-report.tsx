@@ -8,7 +8,6 @@ import { ReportOverview } from './report-overview';
 import { RadarChart } from './radar-chart';
 import { RoundEvaluation } from './round-evaluation';
 import { ImprovementPlan } from './improvement-plan';
-import { HistoryComparison } from './history-comparison';
 import { ExportButtons } from './export-buttons';
 import type { InterviewReport, InterviewSession, DimensionScore, RoundEvaluation as RoundEvalType, ImprovementItem } from '@/types/interview';
 
@@ -45,7 +44,6 @@ export function InterviewReportView({ report, session }: InterviewReportViewProp
       </div>
 
       <ImprovementPlan items={report.improvementPlan as ImprovementItem[]} />
-      <HistoryComparison currentReport={report} />
     </div>
   );
 }

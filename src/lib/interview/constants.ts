@@ -17,6 +17,7 @@ export const RESERVED_INTERVIEW_SEGMENTS = new Set([
   'new',
   'history',
   'profile',
+  'weak-questions',
   'retry',
 ]);
 

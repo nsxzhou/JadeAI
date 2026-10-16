@@ -805,7 +805,9 @@
       "start": "进入面试",
       "viewReport": "查看报告",
       "viewRecord": "查看面试记录",
-      "deleteConfirm": "确定要删除这场面试记录吗？此操作不可恢复。"
+      "deleteConfirm": "确定要删除这场面试记录吗？此操作不可恢复。",
+      "profile": "能力画像",
+      "weakQuestions": "错题本"
     },
     "setup": {
       "title": "新建面试",
@@ -939,6 +941,34 @@
     "modes": {
       "mock": "模拟面试",
       "perspective": "面试官视角"
+    },
+    "profile": {
+      "title": "能力画像",
+      "subtitle": "同一坐标系上的分数才能累积：通用层跨岗位族可比，族层只在同一族内可比。",
+      "general": "通用层趋势",
+      "family": "族层（按岗位族分面）",
+      "noData": "还没有可累积的报告。完成一场面试后，这里会出现趋势线。",
+      "sessions": "已累积 {count} 场",
+      "latest": "最近 {score}",
+      "delta": "变化 {delta}",
+      "back": "返回面试大厅",
+      "weak": "错题本"
+    },
+    "weak": {
+      "title": "错题本",
+      "subtitle": "单题低于 60 分或被你手动标记的题会出现在这里；重练会复制题目，不会覆盖原记录。",
+      "noData": "还没有错题。",
+      "intent": "考察意图",
+      "attempts": "历次回答",
+      "score": "{score} 分",
+      "unscored": "未评分",
+      "select": "选择",
+      "retry": "重练选中的 {count} 题",
+      "retrying": "正在创建重练…",
+      "back": "返回面试大厅",
+      "profile": "能力画像",
+      "skipped": "已跳过",
+      "timedOut": "超时"
     }
   },
   "desktopUpdate": {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildProfile } from './profile';
-import { collectWeakQuestions, planRetryQuestions } from './weak-questions';
+import { collectWeakQuestions, groupWeakQuestions, planRetryQuestions } from './weak-questions';
 import type { DimensionScore, InterviewQuestion, RoleFamilyKey } from './types';
 
 const score = (key: string, layer: 'general' | 'family', value: number): DimensionScore =>
@@ -91,5 +91,44 @@ describe('weak-questions', () => {
     expect(retry).toHaveLength(10);
     expect(retry[0].id).toBe('q0');
     expect(retry[9].id).toBe('q9');
+  });
+});
+
+describe('groupWeakQuestions', () => {
+  const base = {
+    question: 'q',
+    intent: 'i',
+    rubric: { excellent: '', pass: '', fail: '' },
+    followUps: [],
+    referencePoints: [],
+    estimatedMinutes: 5,
+    difficulty: 'medium' as const,
+    dimension: 'general_logic',
+  };
+
+  it('重练链聚成一组，历次回答按时间升序', () => {
+    const entries = groupWeakQuestions([
+      { question: { ...base, id: 'q1', score: 40, answer: '第一次', status: 'answered' }, sessionId: 's1', createdAt: '2026-01-01' },
+      { question: { ...base, id: 'q2', originQuestionId: 'q1', score: 50, answer: '重练后', status: 'answered' }, sessionId: 's2', createdAt: '2026-02-01' },
+    ]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].rootId).toBe('q1');
+    expect(entries[0].attempts.map((a) => a.answer)).toEqual(['第一次', '重练后']);
+    // 最新一次代表当前状态
+    expect(entries[0].question.id).toBe('q2');
+  });
+
+  it('不达标的题才进错题本', () => {
+    const entries = groupWeakQuestions([
+      { question: { ...base, id: 'ok', score: 80, answer: 'x', status: 'answered' }, sessionId: 's1', createdAt: '2026-01-01' },
+      { question: { ...base, id: 'bad', score: 50, answer: 'x', status: 'answered' }, sessionId: 's1', createdAt: '2026-01-02' },
+    ]);
+    expect(entries.map((e) => e.rootId)).toEqual(['bad']);
+  });
+
+  it('没有 id 的题目被跳过而不是崩掉', () => {
+    expect(groupWeakQuestions([
+      { question: { ...base, score: 10, answer: 'x', status: 'answered' }, sessionId: 's1', createdAt: '2026-01-01' },
+    ])).toEqual([]);
   });
 });

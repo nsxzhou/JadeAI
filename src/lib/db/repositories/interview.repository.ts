@@ -16,6 +16,15 @@ import type {
   RoundEvaluation as DomainRoundEvaluation,
 } from '@/lib/interview-core/types';
 
+/** 跨场次查询的题目行：题目 + 它属于哪个场次。 */
+export interface UserQuestionRow {
+  question: Record<string, unknown>;
+  sessionId: string;
+  jobTitle: string;
+  roleFamilyKey: string | null;
+  createdAt: string;
+}
+
 export const interviewRepository = {
   // ── Sessions ────────────────────────────────────────────────────────────────
 
@@ -245,6 +254,51 @@ export const interviewRepository = {
   async insertQuestions(rows: InterviewQuestionRow[]) {
     if (rows.length === 0) return;
     await db.insert(interviewQuestions).values(rows as any);
+  },
+
+  /**
+   * 跨场次的题目：错题本与画像都从这里取。
+   *
+   * 一次取全量再在 JS 里按会话聚合：单用户的面试量很小，不值得为两种方言各写一套 SQL。
+   */
+  async findQuestionsByUserId(userId: string): Promise<UserQuestionRow[]> {
+    const sessions = await db
+      .select({ id: interviewSessions.id, jobTitle: interviewSessions.jobTitle, roleFamilyKey: interviewSessions.roleFamilyKey })
+      .from(interviewSessions)
+      .where(eq(interviewSessions.userId, userId));
+    if (sessions.length === 0) return [];
+
+    const sessionById = new Map<string, { id: string; jobTitle: string; roleFamilyKey: string | null }>(
+      sessions.map((session: { id: string; jobTitle: string; roleFamilyKey: string | null }) => [session.id, session]),
+    );
+    const rounds = await db
+      .select({ id: interviewRounds.id, sessionId: interviewRounds.sessionId })
+      .from(interviewRounds)
+      .where(inArray(interviewRounds.sessionId, sessions.map((session: { id: string }) => session.id)));
+    if (rounds.length === 0) return [];
+
+    const roundToSession = new Map<string, string>(
+      rounds.map((round: { id: string; sessionId: string }) => [round.id, round.sessionId]),
+    );
+    const questions = await db
+      .select()
+      .from(interviewQuestions)
+      .where(inArray(interviewQuestions.roundId, rounds.map((round: { id: string }) => round.id)));
+
+    return questions
+      .map((row: Record<string, unknown>): UserQuestionRow | null => {
+        const sessionId = roundToSession.get(String(row.roundId));
+        if (!sessionId) return null;
+        const session = sessionById.get(sessionId);
+        return {
+          question: row,
+          sessionId,
+          jobTitle: String(session?.jobTitle ?? ''),
+          roleFamilyKey: session?.roleFamilyKey ?? null,
+          createdAt: new Date((row.updatedAt as Date | string | undefined) ?? Date.now()).toISOString(),
+        };
+      })
+      .filter((value: UserQuestionRow | null): value is UserQuestionRow => value !== null);
   },
 
   /** 更新单题（答录、评分、标记）。只允许改白名单字段。 */

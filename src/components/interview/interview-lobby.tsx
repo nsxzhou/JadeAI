@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { InterviewCard } from './interview-card';
 import { InterviewModeSwitch } from './mode-switch';
+import { BarChart3, NotebookPen } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import type { InterviewSession } from '@/types/interview';
 
@@ -54,12 +55,26 @@ export function InterviewLobby() {
       <InterviewModeSwitch />
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t('title')}</h1>
-        <Link href="/interview/new">
-          <Button className="bg-brand hover:bg-brand-hover">
-            <Plus className="mr-2 h-4 w-4" />
-            {t('newInterview')}
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/interview/profile">
+            <Button variant="outline" size="sm">
+              <BarChart3 className="mr-1 h-4 w-4" />
+              {t('profile')}
+            </Button>
+          </Link>
+          <Link href="/interview/weak-questions">
+            <Button variant="outline" size="sm">
+              <NotebookPen className="mr-1 h-4 w-4" />
+              {t('weakQuestions')}
+            </Button>
+          </Link>
+          <Link href="/interview/new">
+            <Button className="bg-brand hover:bg-brand-hover">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('newInterview')}
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {loading ? (

@@ -805,7 +805,9 @@
       "start": "Start Interview",
       "viewReport": "View Report",
       "viewRecord": "View Record",
-      "deleteConfirm": "Are you sure you want to delete this interview? This action cannot be undone."
+      "deleteConfirm": "Are you sure you want to delete this interview? This action cannot be undone.",
+      "profile": "Skill profile",
+      "weakQuestions": "Weak questions"
     },
     "setup": {
       "title": "New Interview",
@@ -939,6 +941,34 @@
     "modes": {
       "mock": "Mock interview",
       "perspective": "Interviewer's view"
+    },
+    "profile": {
+      "title": "Skill profile",
+      "subtitle": "Scores only accumulate on a stable coordinate system: the general layer is comparable across role families, the family layer only within one.",
+      "general": "General layer trend",
+      "family": "Family layer (faceted by role family)",
+      "noData": "No comparable reports yet. Finish an interview and the trend lines appear here.",
+      "sessions": "{count} session(s) accumulated",
+      "latest": "Latest {score}",
+      "delta": "Change {delta}",
+      "back": "Back to lobby",
+      "weak": "Weak-question notebook"
+    },
+    "weak": {
+      "title": "Weak-question notebook",
+      "subtitle": "Questions scored below 60 or flagged by you land here. Retrying copies the questions; originals are never overwritten.",
+      "noData": "No weak questions yet.",
+      "intent": "What it probes",
+      "attempts": "Attempts",
+      "score": "{score}",
+      "unscored": "Not scored",
+      "select": "Select",
+      "retry": "Retry {count} selected",
+      "retrying": "Creating retry session…",
+      "back": "Back to lobby",
+      "profile": "Skill profile",
+      "skipped": "Skipped",
+      "timedOut": "Timed out"
     }
   },
   "desktopUpdate": {
