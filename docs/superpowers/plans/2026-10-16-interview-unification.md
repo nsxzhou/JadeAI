@@ -250,11 +250,25 @@ interface InterviewQuestion {
 | 7 资产 | ⬜ 未开始 | 画像与错题本 API 与 UI、重练 |
 | 8 语音 | 🟡 仅接口 | `interview-core/speech.ts` 预留 `SpeechToText` 与「转写修正 ≠ 答案修改」裁决 |
 
-### 阶段 3 的过渡项（阶段 4/5 收尾）
+| 4 可信报告 | ✅ 完成 | 强 schema、单题分链路（AI 只给档位）、服务端维度/总分聚合、两段式（逐轮可重试 + 汇总不重读全文）、原始回答可追溯；两个模式都不再由 AI 产出维度分 |
+| 5 蓝图出题 | ✅ 完成（DROP COLUMN 例外） | 候选人侧蓝图→校验→逐维度并发生成→落 `interview_questions`；事实三分类沿用已验证 prompt；槽位驱动对话与 `currentQuestionId`；反问固定末槽；面试官 focusAreas 降级 |
+| 6 真实约束 | ✅ 完成 | 限时/超时保全/不可回改/压力面/反问/轮次起止时间；每题倒计时与自动推进 |
+| 7 资产 | ✅ 完成 | 两层坐标能力画像、跨场次错题本、重练（复制 + `originQuestionId`）、画像与错题本页面；`history-comparison` 并入后删除 |
+| 8 语音 | 🟡 仅接口 | `interview-core/speech.ts` 预留 `SpeechToText` 与「转写修正 ≠ 答案修改」裁决 |
 
-1. **`perspective_candidates.questions` JSON 列仍在表上**，但业务已不读写；回填执行器启动时会把旧数据迁走并置 NULL。阶段 5 追加一条 `DROP COLUMN questions`。
-2. **面试官视角 UI 仍把 `weight` 当题数**（`dimension-chips.tsx` 的滑块），`question_counts` 列已就位但 UI 尚未改用它。
-3. **新维度 key（`general_*`、前端/数据/QA 族）的 i18n 文案尚未补齐**；现有 `perspective.dimensions.*` 仍是旧的 7 个 key。
-4. **相位 4 的依赖**：单题分要落 `interview_questions.tier/score`，而候选人侧的题目行要等阶段 5 的蓝图出题才会存在。因此阶段 4 的“逐轮评估 + 单题分”先在**面试官视角**（题目已在表中）落地，候选人侧两段式报告随阶段 5 一起完成。
-5. **报告本地类型**仍叫 `ReportDimensionScore` / `ReportRoundEvaluation` / `ReportQuestionEvaluation`，阶段 4 换成内核 `DimensionScore` / `RoundEvaluation`。
-6. 未做 UI 截图核对（阶段 3 验收的最后一项）；已验证 `pnpm build` 通过、无 `/recruit` 路由残留、中英键路径一致。
+### 唯一未执行的一条：`DROP COLUMN questions`（有意推迟）
+
+计划阶段 5 第 6 步要求在停止 JSON 读取后追加 `DROP COLUMN questions`。**没有执行**，原因是一处顺序陷阱：
+
+- `migrate()` 在 adapter 里先跑完所有待应用的迁移，`backfillLegacyQuestions()` 在它之后才运行；
+- 若把 `DROP COLUMN` 放进同一次发布的迁移里，已有旧库会在回填之前就把 JSON 列删掉——**数据直接丢**。
+
+正确做法是等回填在所有存量安装上跑过一次（现已随启动执行，并把该列置 NULL），再在**后续发布**里加这条 `DROP COLUMN`。届时同时删掉 `src/lib/db/backfill-questions.ts` 与两个 adapter 里的调用。
+
+### 剩余收尾（不影响功能）
+
+1. **面试官视角 UI 仍把 `weight` 当题数**（`dimension-chips.tsx` 滑块）；`question_counts` 列已就位，UI 待改成逐维度 `questionCounts`。
+2. **面试官视角的评价仍是「一次生成全轮」**（没有候选人侧的两段式与可重试），但维度分已改为服务端聚合。
+3. **旧维度 key（`professional` 等）仍在 `dimensions.ts` 的旧目录里**，面试官视角继续用它出题；换成两层坐标目录时一并清掉。
+4. **`/api/interview/history/stats` 已无 UI 引用**（历史对比并入画像），可删。
+5. **UI 截图核对未做**；已验证 `pnpm build` 通过、新路由已注册、中英键路径一致。
