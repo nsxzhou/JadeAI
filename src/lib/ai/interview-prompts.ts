@@ -5,9 +5,11 @@ export function buildInterviewSystemPrompt(params: {
   jobDescription: string;
   resumeContent?: string;
   maxQuestions: number;
+  /** 这一问就是本轮最后一题：必须收尾，不能继续抛新题。 */
+  isFinalQuestion?: boolean;
   locale: string;
 }) {
-  const { interviewer, jobDescription, resumeContent, maxQuestions, locale } = params;
+  const { interviewer, jobDescription, resumeContent, maxQuestions, isFinalQuestion, locale } = params;
   const lang = locale === 'zh' ? '中文' : 'English';
 
   if (locale === 'zh') {
@@ -45,6 +47,7 @@ ${resumeContent ? resumeContent : '候选人未提供简历，请根据岗位要
 - 每次只提出一个问题，等候选人完整作答后再回应。
 - 先对候选人的回答做出简短回应（认可、质疑或补充追问），再过渡到下一个问题。
 - 本轮总共约 ${maxQuestions} 个主题问题（含追问），节奏自然，不赶不拖。
+${isFinalQuestion ? '- **这是本轮最后一个问题。** 问完这一问后不要再提出新问题，直接给出简短的本轮评价，并按要求写下结束标记。' : ''}
 
 ## 提问策略
 - 开场：简短自我介绍 + 本轮方向说明，随即进入第一个问题。
@@ -107,6 +110,7 @@ ${resumeContent ? resumeContent : 'No resume provided. Assess the candidate base
 - Ask one question at a time. Wait for the candidate to finish before responding.
 - Briefly react to each answer (acknowledge, challenge, or follow up) before transitioning to the next topic.
 - Cover approximately ${maxQuestions} topic questions this round (including follow-ups). Keep a natural pace.
+${isFinalQuestion ? '- **This is the final question of this round.** After it, do not raise new questions — give a brief round assessment and end with the completion marker.' : ''}
 
 ## Questioning Strategy
 - Opening: Brief self-introduction + round overview, then directly into the first question.

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveUser, getUserIdFromRequest } from '@/lib/auth/helpers';
 import { interviewRepository } from '@/lib/db/repositories/interview.repository';
-import { buildHintPrompt, buildSkipPrompt, buildEndRoundPrompt } from '@/lib/ai/interview-prompts';
+import { buildHintPrompt, buildSkipPrompt } from '@/lib/ai/interview-prompts';
 import { dbReady } from '@/lib/db';
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -16,16 +16,33 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  const { action, roundId, locale = 'zh' } = await request.json();
+  const { action, roundId, messageId, marked, locale = 'zh' } = await request.json();
+
+  // 标记类指令直接合并进目标消息的 metadata。跳过的消息不会因为刷新而丢标记。
+  const requireMessage = (): string | null => (typeof messageId === 'string' && messageId ? messageId : null);
 
   let systemMessage = '';
   switch (action) {
-    case 'skip':
-      systemMessage = buildSkipPrompt(locale);
-      break;
-    case 'hint':
+    case 'mark': {
+      const target = requireMessage();
+      if (!target) return NextResponse.json({ error: 'messageId required' }, { status: 400 });
+      const metadata = await interviewRepository.mergeMessageMetadata(target, {
+        marked: typeof marked === 'boolean' ? marked : true,
+      });
+      return NextResponse.json({ success: true, metadata });
+    }
+    case 'hint': {
+      const target = requireMessage();
+      if (target) await interviewRepository.mergeMessageMetadata(target, { hinted: true });
       systemMessage = buildHintPrompt(locale);
       break;
+    }
+    case 'skip': {
+      const target = requireMessage();
+      if (target) await interviewRepository.mergeMessageMetadata(target, { skipped: true });
+      systemMessage = buildSkipPrompt(locale);
+      break;
+    }
     case 'end_round': {
       // Mark current round as completed
       if (roundId) {
@@ -33,13 +50,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
       // Advance to next round or complete session
       const rounds = await interviewRepository.findRoundsBySessionId(sessionId);
-      const currentIndex = rounds.findIndex((r: any) => r.id === roundId);
+      const currentIndex = rounds.findIndex((r: { id: string }) => r.id === roundId);
       const nextRound = currentIndex >= 0 ? rounds[currentIndex + 1] : undefined;
       if (nextRound) {
         await interviewRepository.updateSessionRound(sessionId, currentIndex + 1);
       } else {
         await interviewRepository.updateSessionStatus(sessionId, 'completed');
       }
+      // 让本轮收尾：round 已完成，下一轮或整场结束。
       return NextResponse.json({ success: true });
     }
     case 'pause':

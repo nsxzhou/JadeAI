@@ -58,6 +58,25 @@ export function useInterviewChat({ sessionId, roundId, selectedModel }: UseInter
     }
   }, [messages, isLoading]);
 
+  // 服务端为候选人消息生成 id 并通过流回传；前端把它替换掉自己临时造的那个，
+  // 这样刷新后重读 DB 时消息 id 一致，控制标记也能对得上。
+  useEffect(() => {
+    if (isLoading) return;
+    const assistantIndex = messages.findLastIndex((m) => m.role === 'assistant');
+    if (assistantIndex < 0) return;
+
+    const serverUserId = (messages[assistantIndex].metadata as { candidateMessageId?: string | null } | undefined)?.candidateMessageId;
+    if (!serverUserId) return;
+
+    for (let i = assistantIndex - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.role !== 'user') continue;
+      if (message.id === serverUserId) return;
+      setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, id: serverUserId } : m)));
+      return;
+    }
+  }, [messages, isLoading, setMessages]);
+
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
   }, []);

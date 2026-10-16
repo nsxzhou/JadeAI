@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import type { UIMessage } from 'ai';
 import { useRouter } from '@/i18n/routing';
 import { useInterviewStore } from '@/stores/interview-store';
+import type { InterviewMessageMetadata } from '@/types/interview';
 import { useInterviewChat } from '@/hooks/use-interview-chat';
 import { useSettingsStore } from '@/stores/settings-store';
 import { INIT_TRIGGER } from '@/lib/interview/constants';
@@ -26,7 +27,20 @@ function dbMessagesToUIMessages(dbMessages: any[]): UIMessage[] {
       id: m.id,
       role: m.role === 'interviewer' ? ('assistant' as const) : ('user' as const),
       parts: [{ type: 'text' as const, text: m.content }],
+      metadata: (m.metadata ?? {}) as InterviewMessageMetadata,
     }));
+}
+
+/** 把 DB 里落库的控制标记搬进 store，刷新后标记仍在。 */
+function flagsFromMessages(dbMessages: any[]): Record<string, InterviewMessageMetadata> {
+  const flags: Record<string, InterviewMessageMetadata> = {};
+  for (const message of dbMessages) {
+    const metadata = (message.metadata ?? {}) as InterviewMessageMetadata;
+    if (metadata.marked || metadata.hinted || metadata.skipped) {
+      flags[message.id] = metadata;
+    }
+  }
+  return flags;
 }
 
 interface InterviewRoomProps {
@@ -37,7 +51,7 @@ interface InterviewRoomProps {
 export function InterviewRoom({ sessionId, initialMessages }: InterviewRoomProps) {
   const t = useTranslations('interview.room');
   const router = useRouter();
-  const { rounds, currentRoundIndex, setCurrentRoundIndex, advanceToNextRound, setIsGeneratingReport, status: sessionStatus } =
+  const { rounds, currentRoundIndex, setCurrentRoundIndex, advanceToNextRound, setIsGeneratingReport, status: sessionStatus, hydrateMessageFlags } =
     useInterviewStore();
   const [showTransition, setShowTransition] = useState(false);
   const [isViewingHistory, setIsViewingHistory] = useState(false);
@@ -88,13 +102,15 @@ export function InterviewRoom({ sessionId, initialMessages }: InterviewRoomProps
     }
   }, [currentRound?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Detect round completion
+  // Detect round completion: the server marks the final question in metadata,
+  // and a model-driven finish still shows up as the [ROUND_COMPLETE] marker.
   useEffect(() => {
     if (!messages.length || isLoading || isViewingHistory) return;
     const lastMsg = messages[messages.length - 1];
     if (lastMsg.role !== 'assistant') return;
+    const meta = lastMsg.metadata as InterviewMessageMetadata | undefined;
     const text = lastMsg.parts?.find((p: any) => p.type === 'text');
-    if ((text as any)?.text?.includes('[ROUND_COMPLETE]')) {
+    if (meta?.roundComplete || (text as any)?.text?.includes('[ROUND_COMPLETE]')) {
       setShowTransition(true);
     }
   }, [messages, isLoading, isViewingHistory]);
@@ -118,8 +134,10 @@ export function InterviewRoom({ sessionId, initialMessages }: InterviewRoomProps
 
       if (roundData?.messages?.length > 0) {
         setMessages(dbMessagesToUIMessages(roundData.messages));
+        hydrateMessageFlags(flagsFromMessages(roundData.messages));
       } else {
         setMessages([]);
+        hydrateMessageFlags({});
       }
     } catch (err) {
       console.error('Failed to load round messages:', err);
@@ -133,7 +151,7 @@ export function InterviewRoom({ sessionId, initialMessages }: InterviewRoomProps
     // Reset init refs
     loadedRef.current = true;
     sentInitRef.current = targetRound.id;
-  }, [rounds, sessionId, sessionStatus, setCurrentRoundIndex, setMessages]);
+  }, [rounds, sessionId, sessionStatus, setCurrentRoundIndex, setMessages, hydrateMessageFlags]);
 
   const handleNextRound = useCallback(() => {
     setShowTransition(false);

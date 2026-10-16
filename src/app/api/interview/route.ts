@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const user = await resolveUser(fingerprint);
   if (!user) return new Response('Unauthorized', { status: 401 });
 
-  const sessions = await interviewRepository.findSessionsByUserId(user.id);
+  const sessions = await interviewRepository.findSessionSummariesByUserId(user.id);
   return NextResponse.json(sessions);
 }
 

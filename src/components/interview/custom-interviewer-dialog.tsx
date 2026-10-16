@@ -42,7 +42,6 @@ export function CustomInterviewerDialog({ onAdd, trigger }: CustomInterviewerDia
       style: style.trim() || '根据考察维度灵活提问',
       focusAreas: focusAreas.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
       personality: personality.trim() || '专业、客观',
-      systemPrompt: '',
     };
 
     onAdd(config);

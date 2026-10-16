@@ -44,6 +44,31 @@ export const interviewRepository = {
     return db.select().from(interviewSessions).where(eq(interviewSessions.userId, userId)).orderBy(desc(interviewSessions.createdAt));
   },
 
+  /**
+   * 列表用：场次 + 报告摘要（总分与维度分）。
+   *
+   * 列表卡片要显示上次总分，但报告是另一个表；没有摘要时前端只能显示空白，
+   * 所以这里是 dashboard 与 lobby 唯一的列表查询入口。
+   */
+  async findSessionSummariesByUserId(userId: string) {
+    const rows = await db
+      .select({ session: interviewSessions, report: interviewReports })
+      .from(interviewSessions)
+      .leftJoin(interviewReports, eq(interviewReports.sessionId, interviewSessions.id))
+      .where(eq(interviewSessions.userId, userId))
+      .orderBy(desc(interviewSessions.createdAt));
+
+    return rows.map(({ session, report }: {
+      session: typeof interviewSessions.$inferSelect;
+      report: typeof interviewReports.$inferSelect | null;
+    }) => ({
+      ...session,
+      reportSummary: report
+        ? { overallScore: report.overallScore, dimensionScores: report.dimensionScores }
+        : null,
+    }));
+  },
+
   async updateSessionStatus(sessionId: string, status: InterviewSessionStatus) {
     await db.update(interviewSessions).set({ status, updatedAt: new Date() }).where(eq(interviewSessions.id, sessionId));
   },
@@ -90,10 +115,12 @@ export const interviewRepository = {
     await db.update(interviewRounds).set({ status, updatedAt: new Date() }).where(eq(interviewRounds.id, roundId));
   },
 
-  async incrementQuestionCount(roundId: string) {
+  /** 递增并返回新值，调用方据此判断是否到达本轮题数上限。 */
+  async incrementQuestionCount(roundId: string): Promise<number> {
     const rows = await db.select({ questionCount: interviewRounds.questionCount }).from(interviewRounds).where(eq(interviewRounds.id, roundId)).limit(1);
-    const current = rows[0]?.questionCount ?? 0;
-    await db.update(interviewRounds).set({ questionCount: current + 1, updatedAt: new Date() }).where(eq(interviewRounds.id, roundId));
+    const next = (rows[0]?.questionCount ?? 0) + 1;
+    await db.update(interviewRounds).set({ questionCount: next, updatedAt: new Date() }).where(eq(interviewRounds.id, roundId));
+    return next;
   },
 
   async setRoundSummary(roundId: string, summary: RoundSummary) {
@@ -103,12 +130,14 @@ export const interviewRepository = {
   // ── Messages ─────────────────────────────────────────────────────────────────
 
   async addMessage(data: {
+    /** 允许调用方指定 id，使流式响应的消息 id 与落库 id 一致。 */
+    id?: string;
     roundId: string;
     role: InterviewMessageRole;
     content: string;
     metadata?: InterviewMessageMetadata;
   }) {
-    const id = crypto.randomUUID();
+    const id = data.id ?? crypto.randomUUID();
     await db.insert(interviewMessages).values({
       id,
       roundId: data.roundId,
@@ -138,6 +167,18 @@ export const interviewRepository = {
 
   async updateMessageMetadata(messageId: string, metadata: InterviewMessageMetadata) {
     await db.update(interviewMessages).set({ metadata: metadata as any }).where(eq(interviewMessages.id, messageId));
+  },
+
+  /**
+   * 合并控制标记（marked / hinted / skipped）进已有 metadata，而不是整体覆盖。
+   * 三种标记会落在同一条消息上，覆盖会丢掉前一次的标记。
+   */
+  async mergeMessageMetadata(messageId: string, patch: InterviewMessageMetadata) {
+    const rows = await db.select().from(interviewMessages).where(eq(interviewMessages.id, messageId)).limit(1);
+    const existing = (rows[0]?.metadata ?? {}) as InterviewMessageMetadata;
+    const merged = { ...existing, ...patch };
+    await db.update(interviewMessages).set({ metadata: merged as any }).where(eq(interviewMessages.id, messageId));
+    return merged;
   },
 
   // ── Reports ──────────────────────────────────────────────────────────────────

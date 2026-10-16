@@ -6,7 +6,6 @@ export interface InterviewerConfig {
   bio: string;
   style: string;
   focusAreas: string[];
-  systemPrompt: string;
   personality: string;
 }
 
@@ -23,10 +22,18 @@ export interface InterviewSession {
   selectedInterviewers: InterviewerConfig[];
   currentRound: number;
   status: InterviewSessionStatus;
+  /** 列表接口带出的报告摘要；详情接口不一定有 */
+  reportSummary?: InterviewReportSummary | null;
   rounds?: InterviewRound[];
   report?: InterviewReport | null;
   createdAt: Date | string;
   updatedAt: Date | string;
+}
+
+/** 列表卡片需要的报告摘要，取自 interview_reports 的一小部分字段。 */
+export interface InterviewReportSummary {
+  overallScore: number;
+  dimensionScores: DimensionScore[];
 }
 
 export interface InterviewRound {
@@ -53,6 +60,10 @@ export interface InterviewMessageMetadata {
   marked?: boolean;
   hinted?: boolean;
   skipped?: boolean;
+  /** 该轮已到最后一题，前端据此转入轮次收尾。 */
+  roundComplete?: boolean;
+  /** 本轮题目在 DB 里的 id（阶段 5 起由槽位绑定），暂无则为 null。 */
+  questionId?: string | null;
 }
 
 export interface InterviewMessage {

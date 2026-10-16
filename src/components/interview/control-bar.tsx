@@ -5,6 +5,7 @@ import { SkipForward, Lightbulb, Bookmark, BookmarkCheck, StopCircle, Pause } fr
 import { Button } from '@/components/ui/button';
 import { useInterviewStore } from '@/stores/interview-store';
 import { getAIHeaders } from '@/stores/settings-store';
+import { HINT_MESSAGE, SKIP_MESSAGE } from '@/lib/interview/constants';
 
 interface ControlBarProps {
   sessionId: string;
@@ -18,32 +19,43 @@ interface ControlBarProps {
 export function useInterviewControls({ sessionId, roundId, lastAssistantMessageId, isLoading, onTriggerAI, onEndRound }: ControlBarProps) {
   const t = useTranslations('interview.room');
   const locale = useLocale();
-  const { markedMessages, toggleMark, addHinted, addSkipped } = useInterviewStore();
-  const isMarked = lastAssistantMessageId ? markedMessages.has(lastAssistantMessageId) : false;
+  const { messageFlags, setMessageFlags } = useInterviewStore();
+  const isMarked = lastAssistantMessageId ? Boolean(messageFlags[lastAssistantMessageId]?.marked) : false;
 
-  const sendControl = async (action: string) => {
+  /** 控制指令的落库结果以服务端返回的 metadata 为准。 */
+  const sendControl = async (action: string, extra: Record<string, unknown> = {}) => {
     const fp = localStorage.getItem('jade_fingerprint');
-    await fetch(`/api/interview/${sessionId}/control`, {
+    const res = await fetch(`/api/interview/${sessionId}/control`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(fp ? { 'x-fingerprint': fp } : {}),
         ...getAIHeaders(),
       },
-      body: JSON.stringify({ action, roundId, locale }),
+      body: JSON.stringify({ action, roundId, locale, ...extra }),
     });
+    if (!res.ok) return null;
+    return res.json().catch(() => null);
   };
 
   const handleSkip = async () => {
-    if (lastAssistantMessageId) addSkipped(lastAssistantMessageId);
-    await sendControl('skip');
-    onTriggerAI('这个问题我暂时没有太好的思路，能换一个问题吗？');
+    if (lastAssistantMessageId) {
+      setMessageFlags(lastAssistantMessageId, { skipped: true });
+      await sendControl('skip', { messageId: lastAssistantMessageId });
+    } else {
+      await sendControl('skip');
+    }
+    onTriggerAI(SKIP_MESSAGE);
   };
 
   const handleHint = async () => {
-    if (lastAssistantMessageId) addHinted(lastAssistantMessageId);
-    await sendControl('hint');
-    onTriggerAI('这个问题我不太确定方向，能给我一些思路上的引导吗？');
+    if (lastAssistantMessageId) {
+      setMessageFlags(lastAssistantMessageId, { hinted: true });
+      await sendControl('hint', { messageId: lastAssistantMessageId });
+    } else {
+      await sendControl('hint');
+    }
+    onTriggerAI(HINT_MESSAGE);
   };
 
   const handleEndRound = async () => {
@@ -55,18 +67,14 @@ export function useInterviewControls({ sessionId, roundId, lastAssistantMessageI
     await sendControl('pause');
   };
 
-  const handleMark = () => {
+  const handleMark = async () => {
     if (!lastAssistantMessageId) return;
-    toggleMark(lastAssistantMessageId);
-    const fp = localStorage.getItem('jade_fingerprint');
-    fetch(`/api/interview/${sessionId}/mark`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(fp ? { 'x-fingerprint': fp } : {}),
-      },
-      body: JSON.stringify({ messageId: lastAssistantMessageId, marked: !isMarked }),
-    });
+    const next = !isMarked;
+    setMessageFlags(lastAssistantMessageId, { marked: next });
+    const result = await sendControl('mark', { messageId: lastAssistantMessageId, marked: next });
+    if (result?.metadata) {
+      setMessageFlags(lastAssistantMessageId, result.metadata);
+    }
   };
 
   const controls = (

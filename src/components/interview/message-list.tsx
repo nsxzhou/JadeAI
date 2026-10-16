@@ -5,7 +5,7 @@ import type { UIMessage } from 'ai';
 import { InterviewerMessage } from './interviewer-message';
 import { CandidateMessage } from './candidate-message';
 import { HIDDEN_MESSAGES } from '@/lib/interview/constants';
-import type { InterviewerConfig } from '@/types/interview';
+import type { InterviewMessageMetadata, InterviewerConfig } from '@/types/interview';
 
 interface MessageListProps {
   messages: UIMessage[];
@@ -32,10 +32,18 @@ export function MessageList({ messages, interviewerConfig }: MessageListProps) {
         }
 
         if (msg.role === 'assistant') {
-          return <InterviewerMessage key={msg.id} content={content} config={interviewerConfig} />;
+          return (
+            <InterviewerMessage
+              key={msg.id}
+              content={content}
+              config={interviewerConfig}
+              messageId={msg.id}
+              metadata={msg.metadata as InterviewMessageMetadata | undefined}
+            />
+          );
         }
         if (msg.role === 'user') {
-          return <CandidateMessage key={msg.id} content={content} messageId={msg.id} />;
+          return <CandidateMessage key={msg.id} content={content} />;
         }
         return null;
       })}

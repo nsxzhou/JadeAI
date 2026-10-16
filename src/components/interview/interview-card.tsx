@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Link } from '@/i18n/routing';
 import type { InterviewSession } from '@/types/interview';
+import { computeInterviewProgress } from '@/lib/interview/progress';
 
 const AVATAR_GRADIENTS: Record<string, string> = {
   hr: 'from-brand to-brand-hover',
@@ -55,13 +56,14 @@ export function InterviewCard({ session, onDelete }: InterviewCardProps) {
   const t = useTranslations('interview');
   const interviewers = session.selectedInterviewers as any[];
   const isCompleted = session.status === 'completed';
-  const currentRound = session.currentRound ?? 0;
-  const totalRounds = interviewers.length;
-  const progressPercent = isCompleted ? 100 : totalRounds > 0 ? (currentRound / totalRounds) * 100 : 0;
+  const progress = computeInterviewProgress({
+    status: session.status,
+    currentRoundIndex: session.currentRound ?? 0,
+    totalRounds: interviewers.length,
+  });
+  const progressPercent = progress.percent;
 
-  // For completed sessions, we'd need the score from the report
-  // For now we show progress info
-  const score = (session as any).report?.overallScore;
+  const score = session.reportSummary?.overallScore;
 
   return (
     <div className="group relative rounded-xl border border-zinc-200 bg-white p-4 transition-shadow hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
@@ -89,7 +91,9 @@ export function InterviewCard({ session, onDelete }: InterviewCardProps) {
         <div className="mb-1 flex justify-between">
           <span className="text-[10px] text-zinc-400">面试进度</span>
           <span className={cn('text-[10px] font-medium', isCompleted ? 'text-green-600' : 'text-zinc-500')}>
-            {isCompleted ? `${totalRounds}/${totalRounds} 轮 · 已完成` : `${currentRound}/${totalRounds} 轮`}
+            {isCompleted
+              ? `${progress.completedRounds}/${progress.totalRounds} 轮 · 已完成`
+              : `${progress.completedRounds}/${progress.totalRounds} 轮`}
           </span>
         </div>
         <div className="h-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
@@ -106,8 +110,8 @@ export function InterviewCard({ session, onDelete }: InterviewCardProps) {
           const type = iv.type?.startsWith('custom_') ? 'custom' : iv.type;
           const gradient = AVATAR_GRADIENTS[type] || 'from-zinc-500 to-zinc-400';
           const tagStyle = TAG_STYLES[type] || 'bg-zinc-50 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
-          const isDone = isCompleted || i < currentRound;
-          const isCurrent = !isCompleted && i === currentRound;
+          const isDone = isCompleted || i < session.currentRound;
+          const isCurrent = !isCompleted && i === (session.currentRound ?? 0);
 
           return (
             <div
