@@ -3,7 +3,7 @@ import { allocateQuestions, computeOverallScore } from './scoring';
 import type { DimensionConfig, DimensionScore } from '@/types/recruit';
 
 function dim(key: string, weight: number): DimensionConfig {
-  return { key, label: key, weight, custom: false };
+  return { key, label: key, layer: 'family' as const, weight, custom: false };
 }
 
 describe('allocateQuestions', () => {
@@ -21,7 +21,7 @@ describe('allocateQuestions', () => {
 
 describe('computeOverallScore', () => {
   function score(key: string, s: number, weight: number): DimensionScore {
-    return { key, label: key, score: s, weight };
+    return { key, label: key, layer: 'family' as const, score: s, weight };
   }
 
   it('按权重加权平均并四舍五入', () => {

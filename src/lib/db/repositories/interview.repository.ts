@@ -7,8 +7,8 @@ import type {
   InterviewRoundStatus,
   InterviewMessageRole,
   RoundSummary,
-  DimensionScore,
-  RoundEvaluation,
+  ReportDimensionScore,
+  ReportRoundEvaluation,
   ImprovementItem,
   InterviewMessageMetadata,
 } from '@/types/interview';
@@ -186,8 +186,8 @@ export const interviewRepository = {
   async createReport(data: {
     sessionId: string;
     overallScore: number;
-    dimensionScores: DimensionScore[];
-    roundEvaluations: RoundEvaluation[];
+    dimensionScores: ReportDimensionScore[];
+    roundEvaluations: ReportRoundEvaluation[];
     overallFeedback: string;
     improvementPlan: ImprovementItem[];
   }) {

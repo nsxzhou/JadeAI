@@ -1,4 +1,4 @@
-import { resolveDimensionGuide } from '@/lib/recruit/dimension-guides';
+import { resolveDimensionGuide } from '@/lib/interview-core/dimension';
 import { detectGoRole } from '@/lib/ai/recruit-blueprint';
 import { allocateQuestions } from '@/lib/recruit/scoring';
 import type {

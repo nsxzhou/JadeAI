@@ -4,7 +4,6 @@ import {
   buildDimensionQuestionsPrompt,
   buildEvaluationPrompt,
 } from './recruit-prompts';
-import { PRESET_DIMENSION_GUIDES } from '@/lib/recruit/dimension-guides';
 import { normalizeQuestions } from '@/lib/recruit/questions';
 import type {
   DimensionConfig,
@@ -14,8 +13,8 @@ import type {
 } from '@/types/recruit';
 
 const DIMENSIONS: DimensionConfig[] = [
-  { key: 'professional', label: '专业技能', weight: 3, custom: false },
-  { key: 'logic', label: '逻辑思维', weight: 2, custom: false },
+  { key: 'professional', label: '专业技能', weight: 3, layer: 'family', custom: false },
+  { key: 'logic', label: '逻辑思维', weight: 2, layer: 'family', custom: false },
 ];
 
 describe('buildDimensionQuestionsPrompt', () => {
@@ -127,14 +126,14 @@ difficulty: medium`);
     expect(prompt).toContain('重点问 Kafka 消息重复消费怎么处理');
   });
 
-  it('没填描述时退回预置指引', () => {
+  it('没填描述时不硬塞一份英文兜底指引', () => {
     const { prompt } = buildDimensionQuestionsPrompt({
       ...base,
       dimension: DIMENSIONS[0],
       blueprint,
       slots: blueprint.slots,
     });
-    expect(prompt).toContain(PRESET_DIMENSION_GUIDES.professional);
+    expect(prompt).not.toContain('How to probe this competency');
   });
 
   it('告诉模型别人负责哪些维度，避免出重复的题', () => {
@@ -153,6 +152,7 @@ difficulty: medium`);
       key: '产品 sense',
       label: '产品 sense',
       weight: 1,
+      layer: 'family',
       custom: true,
     };
     const { prompt } = buildDimensionQuestionsPrompt({
@@ -227,6 +227,7 @@ describe('buildInterviewBlueprintPrompt', () => {
         label: '专业技能',
         description: '重点考察技术原理与工程取舍',
         weight: 3,
+        layer: 'family',
         custom: false,
       },
       {
@@ -234,6 +235,7 @@ describe('buildInterviewBlueprintPrompt', () => {
         label: '逻辑思维',
         description: '重点考察问题拆解与验证路径',
         weight: 2,
+        layer: 'family',
         custom: false,
       },
     ];
@@ -475,7 +477,7 @@ describe('buildEvaluationPrompt', () => {
       resumeText: '参与 RAG 项目',
       dimensions: [
         ...DIMENSIONS,
-        { key: 'communication', label: '沟通协作', weight: 2, custom: false },
+        { key: 'communication', label: '沟通协作', weight: 2, layer: 'family', custom: false },
       ],
       questions,
       transcript: 'x',

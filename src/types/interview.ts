@@ -13,6 +13,22 @@ export type InterviewSessionStatus = 'preparing' | 'in_progress' | 'paused' | 'c
 export type InterviewRoundStatus = 'pending' | 'in_progress' | 'completed' | 'skipped';
 export type InterviewMessageRole = 'interviewer' | 'candidate' | 'system';
 
+import type {
+  DimensionScore as DomainDimensionScore,
+  ImprovementItem as DomainImprovementItem,
+} from '@/lib/interview-core/types';
+
+/** 领域名词统一从共享内核再导出，避免两套定义并存。 */
+export type {
+  DimensionConfig,
+  DimensionLayer,
+  DimensionScore,
+  ImprovementItem,
+  InterviewQuestion,
+  QuestionEvaluation,
+  RoundEvaluation,
+} from '@/lib/interview-core/types';
+
 export interface InterviewSession {
   id: string;
   userId: string;
@@ -33,7 +49,7 @@ export interface InterviewSession {
 /** 列表卡片需要的报告摘要，取自 interview_reports 的一小部分字段。 */
 export interface InterviewReportSummary {
   overallScore: number;
-  dimensionScores: DimensionScore[];
+  dimensionScores: DomainDimensionScore[];
 }
 
 export interface InterviewRound {
@@ -52,7 +68,7 @@ export interface InterviewRound {
 }
 
 export interface RoundSummary {
-  score: number;
+  score: number | null;
   feedback: string;
 }
 
@@ -75,13 +91,13 @@ export interface InterviewMessage {
   createdAt: Date | string;
 }
 
-export interface DimensionScore {
+export interface ReportDimensionScore {
   dimension: string;
   score: number;
   maxScore: number;
 }
 
-export interface QuestionEvaluation {
+export interface ReportQuestionEvaluation {
   question: string;
   answerSummary: string;
   score: number;
@@ -93,30 +109,27 @@ export interface QuestionEvaluation {
   skipped: boolean;
 }
 
-export interface RoundEvaluation {
+export interface ReportRoundEvaluation {
   roundId: string;
   interviewerType: string;
   interviewerName: string;
   score: number;
   feedback: string;
-  questions: QuestionEvaluation[];
+  questions: ReportQuestionEvaluation[];
 }
 
-export interface ImprovementItem {
-  priority: 'high' | 'medium' | 'low';
-  area: string;
-  description: string;
-  resources: string[];
-}
-
+/**
+ * 报告里的坐标分。阶段 4 起会被服务端算出的 DimensionScore 取代，
+ * 这里先保留报告本地形态，改名以区别于领域里的 DimensionScore。
+ */
 export interface InterviewReport {
   id: string;
   sessionId: string;
   overallScore: number;
-  dimensionScores: DimensionScore[];
-  roundEvaluations: RoundEvaluation[];
+  dimensionScores: ReportDimensionScore[];
+  roundEvaluations: ReportRoundEvaluation[];
   overallFeedback: string;
-  improvementPlan: ImprovementItem[];
+  improvementPlan: DomainImprovementItem[];
   createdAt: Date | string;
 }
 
@@ -132,7 +145,7 @@ export interface HistoryStats {
     id: string;
     jobTitle: string;
     overallScore: number;
-    dimensionScores: DimensionScore[];
+    dimensionScores: ReportDimensionScore[];
     createdAt: string;
   }[];
 }

@@ -5,7 +5,7 @@ import type { DimensionConfig } from '@/types/recruit';
 const describeOf = (key: string) => `默认描述:${key}`;
 
 function dim(over: Partial<DimensionConfig>): DimensionConfig {
-  return { key: 'project_deep_dive', label: '项目深挖', weight: 2, custom: false, ...over };
+  return { key: 'project_deep_dive', label: '项目深挖', weight: 2, layer: 'family', custom: false, ...over };
 }
 
 describe('fillPresetDescriptions', () => {
@@ -49,7 +49,7 @@ describe('fillPresetDescriptions', () => {
 describe('interviewDimensions', () => {
   it('把旧评分维度迁移成与题型一致的 Go 面试维度', () => {
     const result = interviewDimensions(
-      [{ key: 'professional', label: '专业技能', weight: 3, custom: false }],
+      [{ key: 'professional', label: '专业技能', weight: 3, layer: 'family', custom: false }],
       true,
       (key) => key,
       (key) => `描述:${key}`,

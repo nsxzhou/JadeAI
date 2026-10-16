@@ -154,7 +154,7 @@ export function InterviewStage({
     if (pending.size === 0) return;
 
     const next = questionsRef.current.map((q) =>
-      pending.has(q.id) ? setQuestionAnswer(q, pending.get(q.id) ?? '') : q,
+      pending.has(q.id ?? '') ? setQuestionAnswer(q, pending.get(q.id ?? '') ?? '') : q,
     );
     setSaveState('saving');
     try {
@@ -181,7 +181,7 @@ export function InterviewStage({
   function handleDraftChange(value: string) {
     if (!current || readOnly) return;
     setDraft(value);
-    pendingRef.current.set(current.id, value);
+    pendingRef.current.set(current.id ?? '', value);
     setCandidate((prev) => prev && {
       ...prev,
       questions: (prev.questions ?? []).map((q) =>
@@ -620,7 +620,7 @@ export function InterviewStage({
       });
       if (!res.ok) throw new Error('save failed');
       const data = await res.json();
-      pendingRef.current.delete(current.id);
+      pendingRef.current.delete(current.id ?? '');
       setCandidate(data.candidate);
       // 删的是最后一题就往前退一格，否则原地停留即可（后面的题会顶上来）
       const nextIndex = Math.min(index, next.length - 1);
@@ -641,7 +641,7 @@ export function InterviewStage({
     const unskip = current.status === 'skipped';
     const next = questionsRef.current.map((q) => {
       if (q.id === current.id) return unskip ? setQuestionAnswer(q, '') : markQuestionSkipped(q);
-      const pending = pendingRef.current.get(q.id);
+      const pending = pendingRef.current.get(q.id ?? '');
       return pending === undefined ? q : setQuestionAnswer(q, pending);
     });
 

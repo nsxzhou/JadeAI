@@ -68,6 +68,8 @@ export function defaultDimensions(
     label: labelOf(key),
     description: describeOf(key),
     weight: key === 'go_fundamentals' || key === 'backend_fundamentals' || key === 'project_deep_dive' ? 3 : 2,
+    // 过渡期：旧目录的 key 全部归族层；阶段 3/5 会换成两层坐标目录。
+    layer: 'family' as const,
     custom: false,
   }));
 }

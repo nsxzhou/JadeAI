@@ -40,7 +40,7 @@ export function DimensionChips({ value, onChange, onAIRecognize, aiRecognizing =
       // 用户想改也随时能改。
       onChange([
         ...value,
-        { key, label: t(key), description: t(`descriptions.${key}`), weight: 2, custom: false },
+        { key, label: t(key), description: t(`descriptions.${key}`), weight: 2, layer: 'family', custom: false },
       ]);
     }
   }
@@ -54,7 +54,7 @@ export function DimensionChips({ value, onChange, onAIRecognize, aiRecognizing =
     const description = customDescription.trim();
     if (!name || !description || selectedByKey.has(name)) return;
     // 自定义维度的 key 用名字本身，好在 prompt 和打分结果里对得上
-    onChange([...value, { key: name, label: name, description, weight: 2, custom: true }]);
+    onChange([...value, { key: name, label: name, description, weight: 2, layer: 'family', custom: true }]);
     setCustomName('');
     setCustomDescription('');
     setCustomOpen(false);

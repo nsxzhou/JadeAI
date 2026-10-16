@@ -69,9 +69,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // 以我们自己的题目列表为准。
     const byId = new Map(parsed.questionEvaluations.map((e) => [e.questionId, e]));
     const questionEvaluations: QuestionEvaluation[] = questions.map((q) => {
-      const e = byId.get(q.id);
+      const e = byId.get(q.id ?? '');
       return {
-        questionId: q.id,
+        questionId: q.id ?? '',
         question: q.question,
         answerSummary: e?.answerSummary ?? '',
         answered: e?.answered ?? false,
@@ -94,6 +94,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const dimensionScores: DimensionScore[] = dimensions.map((d) => ({
       key: d.key,
       label: d.label,
+      layer: d.layer,
       score: answeredDimensions.has(d.key) ? (scoreByKey.get(d.key) ?? 0) : 0,
       weight: answeredDimensions.has(d.key) ? d.weight : 0,
     }));
@@ -102,9 +103,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const finalized = finalizeEvaluationForHr({
       ...parsed,
       questionEvaluations: questionEvaluations.map((evaluation) => ({
-        questionId: evaluation.questionId,
+        questionId: evaluation.questionId ?? '',
         answerSummary: evaluation.answerSummary,
-        answered: evaluation.answered,
+        answered: evaluation.answered ?? false,
         score: evaluation.score,
         highlights: evaluation.highlights,
         weaknesses: evaluation.weaknesses,
@@ -120,7 +121,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     );
     const finalizedQuestionEvaluations = questionEvaluations.map((evaluation) => ({
       ...evaluation,
-      ...(finalizedQuestionById.get(evaluation.questionId) ?? {}),
+      ...(finalizedQuestionById.get(evaluation.questionId ?? '') ?? {}),
     }));
 
     const evaluation = await recruitRepository.upsertEvaluation({

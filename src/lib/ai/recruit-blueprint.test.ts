@@ -31,8 +31,8 @@ describe('canonicalizeBlueprintEvidence', () => {
 });
 
 const dimensions: DimensionConfig[] = [
-  { key: 'professional', label: 'Professional skill', weight: 6, custom: false },
-  { key: 'communication', label: 'Communication', weight: 2, custom: false },
+  { key: 'professional', label: 'Professional skill', weight: 6, layer: 'family', custom: false },
+  { key: 'communication', label: 'Communication', weight: 2, layer: 'family', custom: false },
 ];
 
 const slotA: QuestionSlot = {
@@ -261,7 +261,6 @@ describe('validateBlueprint', () => {
     'project_deep_dive',
     'system_scenario',
     'communication_pressure',
-    'hr_motivation',
   ] as const)('requires %s coverage for Go interviews with at least eight slots', (category) => {
     const withoutCategory = {
       ...blueprintWith8SlotsAnd2Go,

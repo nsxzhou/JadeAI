@@ -1,5 +1,6 @@
 import { z } from 'zod/v4';
 import { QUESTION_COUNT_MAX, QUESTION_COUNT_MIN } from '@/types/recruit';
+import { interviewQuestionCategorySchema } from '@/lib/interview-core/types';
 
 // ── 通用容错工具 ──────────────────────────────────────────────────────────────
 
@@ -19,6 +20,10 @@ const score0to100 = z
 export const dimensionConfigSchema = z.object({
   key: z.string().min(1),
   label: z.string().min(1),
+  // 过渡期：客户端还没传 layer 时按族层处理；阶段 3/5 会改成必填。
+  layer: z
+    .union([z.enum(['general', 'family']), z.null(), z.undefined()])
+    .transform((v) => v ?? 'family'),
   weight: z.number().int().positive(),
   custom: z.boolean(),
   // 加这个字段之前建的岗位，库里那条 JSON 没有 description。
@@ -67,16 +72,7 @@ export const updateCandidateInputSchema = z.object({
 
 // ── 输出 schema（模型返回值校验） ─────────────────────────────────────────────
 
-const interviewQuestionCategorySchema = z.enum([
-  'go_fundamentals',
-  'backend_fundamentals',
-  'middleware_database',
-  'project_deep_dive',
-  'system_scenario',
-  'communication_pressure',
-  'hr_motivation',
-]);
-
+// 题型目录的唯一来源在内核；这里直接复用，避免两套枚举慢慢跑偏。
 const interviewQuestionSourceSchema = z.enum(['resume', 'jd', 'gap']);
 const strictDifficultySchema = z.enum(['easy', 'medium', 'hard']);
 

@@ -35,8 +35,8 @@ beforeEach(async () => {
 });
 
 const DIMENSIONS = [
-  { key: 'professional', label: '专业技能', weight: 3, custom: false },
-  { key: 'logic', label: '逻辑思维', weight: 2, custom: false },
+  { key: 'professional', label: '专业技能', weight: 3, layer: 'family' as const, custom: false },
+  { key: 'logic', label: '逻辑思维', weight: 2, layer: 'family' as const, custom: false },
 ];
 
 async function createJob() {
@@ -76,7 +76,7 @@ describe('recruitRepository — jobs', () => {
 
   it('更新岗位的维度与题目数', async () => {
     const job = await createJob();
-    const next = [...DIMENSIONS, { key: 'stress', label: '抗压能力', weight: 1, custom: false }];
+    const next = [...DIMENSIONS, { key: 'stress', label: '抗压能力', weight: 1, layer: 'family' as const, custom: false }];
     await recruitRepository.updateJob(job.id, { dimensions: next, questionCount: 15 });
     const updated = await recruitRepository.findJob(job.id);
     expect(updated!.dimensions).toHaveLength(3);

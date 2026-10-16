@@ -10,11 +10,11 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import type { DimensionScore } from '@/types/interview';
+import type { ReportDimensionScore } from '@/types/interview';
 
 interface RadarChartProps {
-  dimensions: DimensionScore[];
-  comparisonDimensions?: DimensionScore[];
+  dimensions: ReportDimensionScore[];
+  comparisonDimensions?: ReportDimensionScore[];
   comparisonLabel?: string;
 }
 

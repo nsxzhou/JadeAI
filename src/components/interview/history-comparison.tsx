@@ -12,7 +12,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { RadarChart } from './radar-chart';
-import type { HistoryStats, DimensionScore, InterviewReport } from '@/types/interview';
+import type { HistoryStats, ReportDimensionScore, InterviewReport } from '@/types/interview';
 
 interface HistoryComparisonProps {
   currentReport: InterviewReport;
@@ -41,7 +41,7 @@ export function HistoryComparison({ currentReport }: HistoryComparisonProps) {
   }));
 
   const lastSession = stats.sessions.find((s) => s.id !== currentReport.sessionId);
-  const lastDimensions = lastSession?.dimensionScores as DimensionScore[] | undefined;
+  const lastDimensions = lastSession?.dimensionScores as ReportDimensionScore[] | undefined;
 
   return (
     <div className="space-y-6">
@@ -60,7 +60,7 @@ export function HistoryComparison({ currentReport }: HistoryComparisonProps) {
 
       {lastDimensions && (
         <RadarChart
-          dimensions={currentReport.dimensionScores as DimensionScore[]}
+          dimensions={currentReport.dimensionScores as ReportDimensionScore[]}
           comparisonDimensions={lastDimensions}
           comparisonLabel={t('comparedToLast')}
         />

@@ -17,8 +17,8 @@ function q(id: string, dimension: string, minutes: number): InterviewQuestion {
 }
 
 const DIMS: DimensionConfig[] = [
-  { key: 'professional', label: '专业技能', weight: 3, custom: false },
-  { key: 'logic', label: '逻辑思维', weight: 2, custom: false },
+  { key: 'professional', label: '专业技能', weight: 3, layer: 'family', custom: false },
+  { key: 'logic', label: '逻辑思维', weight: 2, layer: 'family', custom: false },
 ];
 
 describe('summarizeQuestions', () => {
