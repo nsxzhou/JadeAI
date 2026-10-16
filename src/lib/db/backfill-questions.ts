@@ -11,7 +11,7 @@
 import { eq, isNotNull } from 'drizzle-orm';
 import { perspectiveCandidates, interviewQuestions } from './schema';
 import { legacyQuestionsToRows } from '@/lib/interview-core/legacy-questions';
-import { normalizeQuestions } from '@/lib/recruit/questions';
+import { normalizeQuestions } from '@/lib/perspective/questions';
 
 export async function backfillLegacyQuestions(db: any): Promise<number> {
   let candidates: Array<{ id: string; questions: unknown }>;

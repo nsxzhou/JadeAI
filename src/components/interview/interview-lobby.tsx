@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { InterviewCard } from './interview-card';
+import { InterviewModeSwitch } from './mode-switch';
 import { Link } from '@/i18n/routing';
 import type { InterviewSession } from '@/types/interview';
 
@@ -50,6 +51,7 @@ export function InterviewLobby() {
 
   return (
     <div>
+      <InterviewModeSwitch />
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t('title')}</h1>
         <Link href="/interview/new">

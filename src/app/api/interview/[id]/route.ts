@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { resolveUser, getUserIdFromRequest } from '@/lib/auth/helpers';
 import { interviewRepository } from '@/lib/db/repositories/interview.repository';
 import { dbReady } from '@/lib/db';
+import { isReservedInterviewSegment } from '@/lib/interview/constants';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await dbReady;
   const { id } = await params;
+  // `/interview/perspective` 等静态段名不能被当成场次 id
+  if (isReservedInterviewSegment(id)) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
   const fingerprint = getUserIdFromRequest(request);
   const user = await resolveUser(fingerprint);
   if (!user) return new Response('Unauthorized', { status: 401 });
@@ -32,6 +37,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await dbReady;
   const { id } = await params;
+  // `/interview/perspective` 等静态段名不能被当成场次 id
+  if (isReservedInterviewSegment(id)) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
   const fingerprint = getUserIdFromRequest(request);
   const user = await resolveUser(fingerprint);
   if (!user) return new Response('Unauthorized', { status: 401 });
@@ -53,6 +62,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await dbReady;
   const { id } = await params;
+  // `/interview/perspective` 等静态段名不能被当成场次 id
+  if (isReservedInterviewSegment(id)) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
   const fingerprint = getUserIdFromRequest(request);
   const user = await resolveUser(fingerprint);
   if (!user) return new Response('Unauthorized', { status: 401 });

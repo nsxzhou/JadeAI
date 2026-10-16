@@ -15,7 +15,7 @@
 import { eq } from 'drizzle-orm';
 import { db, dbReady } from '../src/lib/db';
 import { perspectiveJobs, perspectiveCandidates, perspectiveEvaluations } from '../src/lib/db/schema';
-import { shortId } from '../src/lib/recruit/short-id';
+import { shortId } from '../src/lib/perspective/short-id';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

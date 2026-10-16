@@ -7,11 +7,11 @@ import {
   interviewQuestions,
 } from '../schema';
 import { rowToQuestion, questionToRow } from '@/lib/interview-core/legacy-questions';
-import type { CandidateStatRow } from '@/lib/recruit/job-stats';
-import { countAnswered } from '@/lib/recruit/answers';
-import { normalizeQuestions } from '@/lib/recruit/questions';
+import type { CandidateStatRow } from '@/lib/perspective/job-stats';
+import { countAnswered } from '@/lib/perspective/answers';
+import { normalizeQuestions } from '@/lib/perspective/questions';
 // 岗位和候选人 id 都进 URL，短 id 才念得出来；存量 UUID 继续可用
-import { shortId } from '@/lib/recruit/short-id';
+import { shortId } from '@/lib/perspective/short-id';
 import type {
   CandidateStatus,
   CandidateSummary,
@@ -20,7 +20,17 @@ import type {
   InterviewQuestion,
   QuestionEvaluation,
   Recommendation,
-} from '@/types/recruit';
+} from '@/types/perspective';
+
+/**
+ * 候选人行 + 从 interview_questions 读回的题目。
+ *
+ * 题目的权威存储是 `interview_questions`，`perspective_candidates.questions`
+ * JSON 列只剩历史包袱（回填后为 NULL），所以读取路径统一补上这一字段。
+ */
+export type PerspectiveCandidateRow = typeof perspectiveCandidates.$inferSelect & {
+  questions: InterviewQuestion[] | null;
+};
 
 export const perspectiveRepository = {
   // ── Jobs ────────────────────────────────────────────────────────────────────
@@ -123,7 +133,7 @@ export const perspectiveRepository = {
     return this.findCandidate(id);
   },
 
-  async findCandidate(candidateId: string): Promise<typeof perspectiveCandidates.$inferSelect | null> {
+  async findCandidate(candidateId: string): Promise<PerspectiveCandidateRow | null> {
     const rows = await db
       .select()
       .from(perspectiveCandidates)
@@ -132,7 +142,7 @@ export const perspectiveRepository = {
     const row = rows[0];
     if (!row) return null;
     const questions = await this.findQuestionsByCandidateId(candidateId);
-    return { ...row, questions: questions.length > 0 ? questions : null } as any;
+    return { ...row, questions: questions.length > 0 ? questions : null } as PerspectiveCandidateRow;
   },
 
   /** 题目已升格为实体，读写都走 interview_questions。 */
@@ -155,7 +165,7 @@ export const perspectiveRepository = {
     await db.insert(interviewQuestions).values(rows as any);
   },
 
-  async findCandidatesByJobId(jobId: string): Promise<(typeof perspectiveCandidates.$inferSelect)[]> {
+  async findCandidatesByJobId(jobId: string): Promise<PerspectiveCandidateRow[]> {
     const rows = await db
       .select()
       .from(perspectiveCandidates)
@@ -166,8 +176,9 @@ export const perspectiveRepository = {
         const questions = await this.findQuestionsByCandidateId(row.id);
         return { ...row, questions: questions.length > 0 ? questions : null };
       }),
-    ) as any;
+    ) as Promise<PerspectiveCandidateRow[]>;
   },
+
   /**
    * 岗位详情页的候选人列表：只取列表要显示的列，评价的大 JSON 不查出来。
    * 题目已升格为实体，计数改为一次查询 interview_questions 再在 JS 里分组，
@@ -184,6 +195,7 @@ export const perspectiveRepository = {
         resumeText: perspectiveCandidates.resumeText,
         overallScore: perspectiveEvaluations.overallScore,
         recommendation: perspectiveEvaluations.recommendation,
+        dimensionScores: perspectiveEvaluations.dimensionScores,
       })
       .from(perspectiveCandidates)
       .leftJoin(perspectiveEvaluations, eq(perspectiveEvaluations.candidateId, perspectiveCandidates.id))
@@ -222,6 +234,8 @@ export const perspectiveRepository = {
         answeredCount: countAnswered(questions),
         overallScore: r.overallScore ?? null,
         recommendation: (r.recommendation ?? null) as Recommendation | null,
+        // 维度分很小（每维一条），带进列表就能免掉对比表的逐人回查
+        dimensionScores: (r.dimensionScores ?? []) as DimensionScore[],
       };
     });
   },
