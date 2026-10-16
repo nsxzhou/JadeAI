@@ -11,7 +11,7 @@ import {
   groupBlueprintSlots,
   validateBlueprint,
 } from '@/lib/ai/recruit-blueprint';
-import { recruitRepository } from '@/lib/db/repositories/recruit.repository';
+import { perspectiveRepository } from '@/lib/db/repositories/perspective.repository';
 import { requireOwnedCandidate } from '@/lib/recruit/access';
 import {
   interviewDimensions,
@@ -37,9 +37,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    // 候选人可覆盖岗位的维度配置；没覆盖就用岗位的。
-    const configuredDimensions = ((candidate.dimensionsOverride as DimensionConfig[] | null) ??
-      (job.dimensions as DimensionConfig[])) as DimensionConfig[];
+    const configuredDimensions = job.dimensions as DimensionConfig[];
     const isGoRole = detectGoRole(job.title, job.jobDescription);
     const dimensions = interviewDimensions(
       configuredDimensions,
@@ -154,13 +152,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       status: 'pending',
     }));
 
-    const updated = await recruitRepository.updateCandidate(id, {
+    const updated = await perspectiveRepository.updateCandidate(id, {
       questions,
-      dimensionsOverride: dimensions,
       status: 'questions_ready',
     });
     if (job.questionCount !== questionCount) {
-      await recruitRepository.updateJob(job.id, { questionCount });
+      await perspectiveRepository.updateJob(job.id, { questionCount });
     }
 
     return NextResponse.json({ candidate: updated });

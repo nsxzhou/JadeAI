@@ -65,7 +65,6 @@ export const updateCandidateInputSchema = z.object({
   name: z.string().min(1).max(50).optional(),
   resumeText: z.string().optional(),
   transcript: z.string().optional(),
-  dimensionsOverride: dimensionsSchema.nullable().optional(),
   /** 删除单题用：前端传剩下的题目全集，整体覆盖 */
   questions: z.array(z.any()).nullable().optional(),
 });

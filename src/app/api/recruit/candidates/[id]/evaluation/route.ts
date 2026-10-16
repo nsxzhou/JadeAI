@@ -8,7 +8,7 @@ import { computeOverallScore } from '@/lib/recruit/scoring';
 import { hasAnyAnswer } from '@/lib/recruit/answers';
 import { questionsForEvaluation } from '@/lib/recruit/questions';
 import { finalizeEvaluationForHr } from '@/lib/recruit/evaluation';
-import { recruitRepository } from '@/lib/db/repositories/recruit.repository';
+import { perspectiveRepository } from '@/lib/db/repositories/perspective.repository';
 import { requireOwnedCandidate } from '@/lib/recruit/access';
 import type {
   DimensionConfig,
@@ -40,8 +40,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'Interview transcript is required' }, { status: 400 });
     }
 
-    const dimensions = ((candidate.dimensionsOverride as DimensionConfig[] | null) ??
-      (job.dimensions as DimensionConfig[])) as DimensionConfig[];
+    // 候选人级维度覆盖已删除：翻转后「候选人」就是求职者自己，覆盖无意义。
+    const dimensions = job.dimensions as DimensionConfig[];
 
     const { system, prompt } = buildEvaluationPrompt({
       jobTitle: job.title,
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       ...(finalizedQuestionById.get(evaluation.questionId ?? '') ?? {}),
     }));
 
-    const evaluation = await recruitRepository.upsertEvaluation({
+    const evaluation = await perspectiveRepository.upsertEvaluation({
       candidateId: id,
       overallScore,
       dimensionScores,
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       overallComment: finalized.overallComment,
     });
 
-    await recruitRepository.updateCandidate(id, { status: 'evaluated' });
+    await perspectiveRepository.updateCandidate(id, { status: 'evaluated' });
 
     return NextResponse.json({ evaluation });
   } catch (error) {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// 同 recruit.repository.test.ts：src/lib/db/index.ts 在 import 时就会打开真实
+// 同 perspective.repository.test.ts：src/lib/db/index.ts 在 import 时就会打开真实
 // 的 SQLite 文件，所以每个碰 repository 的测试都必须把它替换掉。
 vi.mock('../index', async () => {
   const { mkdtempSync } = await import('node:fs');

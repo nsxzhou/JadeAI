@@ -35,6 +35,15 @@ export class SQLiteAdapter implements DatabaseAdapter {
       return;
     }
 
+    // 题目升格为实体：把旧的 questions JSON 列迁成 interview_questions 行。
+    // 放在 migrate() 之后、业务读取之前。
+    try {
+      const { backfillLegacyQuestions } = await import('../backfill-questions');
+      await backfillLegacyQuestions(this.db);
+    } catch (e) {
+      console.error('[DB] legacy question backfill failed:', e);
+    }
+
     try {
       const row = this.sqlite.prepare('SELECT count(*) as count FROM users').get() as
         | { count: number }

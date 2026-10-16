@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { recruitRepository } from '@/lib/db/repositories/recruit.repository';
+import { perspectiveRepository } from '@/lib/db/repositories/perspective.repository';
 import { updateCandidateInputSchema } from '@/lib/ai/recruit-schema';
 import { requireOwnedCandidate } from '@/lib/recruit/access';
 
@@ -8,7 +8,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const access = await requireOwnedCandidate(request, id);
   if ('error' in access) return access.error;
 
-  const evaluation = await recruitRepository.findEvaluation(id);
+  const evaluation = await perspectiveRepository.findEvaluation(id);
   return NextResponse.json({
     candidate: access.candidate,
     job: access.job,
@@ -30,7 +30,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     );
   }
 
-  const candidate = await recruitRepository.updateCandidate(id, parsed.data as any);
+  const candidate = await perspectiveRepository.updateCandidate(id, parsed.data as any);
   return NextResponse.json({ candidate });
 }
 
@@ -39,6 +39,6 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const access = await requireOwnedCandidate(request, id);
   if ('error' in access) return access.error;
 
-  await recruitRepository.deleteCandidate(id);
+  await perspectiveRepository.deleteCandidate(id);
   return NextResponse.json({ success: true });
 }

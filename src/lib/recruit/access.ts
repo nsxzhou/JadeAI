@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { resolveUser, getUserIdFromRequest } from '@/lib/auth/helpers';
-import { recruitRepository } from '@/lib/db/repositories/recruit.repository';
+import { perspectiveRepository } from '@/lib/db/repositories/perspective.repository';
 
 /**
  * 候选人和评价表都不存 userId，归属通过 jobId 上溯到岗位判断。
@@ -25,7 +25,7 @@ export async function requireOwnedJob(request: Request, jobId: string) {
   // narrowed union variable directly instead of a fresh object literal.
   if ('error' in auth) return { error: auth.error };
 
-  const job = await recruitRepository.findJob(jobId);
+  const job = await perspectiveRepository.findJob(jobId);
   if (!job) {
     return { error: NextResponse.json({ error: 'Job not found' }, { status: 404 }) };
   }
@@ -40,11 +40,11 @@ export async function requireOwnedCandidate(request: Request, candidateId: strin
   // See note in requireOwnedJob above.
   if ('error' in auth) return { error: auth.error };
 
-  const candidate = await recruitRepository.findCandidate(candidateId);
+  const candidate = await perspectiveRepository.findCandidate(candidateId);
   if (!candidate) {
     return { error: NextResponse.json({ error: 'Candidate not found' }, { status: 404 }) };
   }
-  const job = await recruitRepository.findJob(candidate.jobId);
+  const job = await perspectiveRepository.findJob(candidate.jobId);
   if (!job || job.userId !== auth.user.id) {
     return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }

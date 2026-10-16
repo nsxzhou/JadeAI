@@ -110,7 +110,9 @@ export {
 } from './schema-interview';
 
 export {
-  recruitJobs,
-  recruitCandidates,
-  recruitEvaluations,
-} from './schema-recruit';
+  perspectiveJobs,
+  perspectiveCandidates,
+  perspectiveEvaluations,
+} from './schema-perspective';
+
+export { interviewQuestions } from './schema-questions';

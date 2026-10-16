@@ -39,6 +39,14 @@ export class PostgreSQLAdapter implements DatabaseAdapter {
       console.error('[DB] PostgreSQL migration failed:', e);
     }
 
+    // 题目升格为实体：把旧的 questions JSON 列迁成 interview_questions 行。
+    try {
+      const { backfillLegacyQuestions } = await import('../backfill-questions');
+      await backfillLegacyQuestions(this.db);
+    } catch (e) {
+      console.error('[DB] legacy question backfill failed:', e);
+    }
+
     // Auto-seed if empty
     try {
       const result = await this.db.execute(sql`SELECT count(*)::int as count FROM users`);

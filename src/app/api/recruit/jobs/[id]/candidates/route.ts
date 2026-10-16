@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { recruitRepository } from '@/lib/db/repositories/recruit.repository';
+import { perspectiveRepository } from '@/lib/db/repositories/perspective.repository';
 import { createCandidateInputSchema } from '@/lib/ai/recruit-schema';
 import { requireOwnedJob } from '@/lib/recruit/access';
 
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     );
   }
 
-  const candidate = await recruitRepository.createCandidate({
+  const candidate = await perspectiveRepository.createCandidate({
     jobId: id,
     name: parsed.data.name,
   });

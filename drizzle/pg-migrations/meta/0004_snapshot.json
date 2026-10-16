@@ -150,7 +150,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'新对话'"
+          "default": "'\u65b0\u5bf9\u8bdd'"
         },
         "created_at": {
           "name": "created_at",
@@ -981,7 +981,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'未命名简历'"
+          "default": "'\u672a\u547d\u540d\u7b80\u5386'"
         },
         "template": {
           "name": "template",

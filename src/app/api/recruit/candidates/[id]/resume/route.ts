@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractAIConfig, AIConfigError } from '@/lib/ai/provider';
 import { parseResumeFile, validateResumeFile } from '@/lib/ai/parse-resume';
-import { recruitRepository } from '@/lib/db/repositories/recruit.repository';
+import { perspectiveRepository } from '@/lib/db/repositories/perspective.repository';
 import { requireOwnedCandidate } from '@/lib/recruit/access';
 import type { ParsedResume } from '@/lib/ai/parse-schema';
 
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const resumeData = await parseResumeFile(file, aiConfig);
     const resumeText = flattenResume(resumeData);
 
-    const candidate = await recruitRepository.updateCandidate(id, {
+    const candidate = await perspectiveRepository.updateCandidate(id, {
       resumeData,
       resumeText,
       // 简历换了，之前生成的题目就过期了

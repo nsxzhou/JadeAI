@@ -11,6 +11,18 @@ export const interviewSessions = sqliteTable('interview_sessions', {
   selectedInterviewers: text('selected_interviewers', { mode: 'json' }).notNull().default('[]'),
   currentRound: integer('current_round').notNull().default(0),
   status: text('status', { enum: ['preparing', 'in_progress', 'paused', 'completed'] }).notNull().default('preparing'),
+  /** 岗位族（老会话为 NULL，视图按 other 处理，不进族层画像） */
+  roleFamilyKey: text('role_family_key'),
+  primaryStack: text('primary_stack'),
+  /** 题数预设 short | standard | long */
+  questionCountPreset: text('question_count_preset'),
+  /** 整场限时 = 题数 × 180 × 1.1 */
+  totalTimeLimitSec: integer('total_time_limit_sec'),
+  /** 当前题，供「中断后恢复」 */
+  currentQuestionId: text('current_question_id'),
+  /** 压力面强度 gentle | standard | sharp */
+  stressLevel: text('stress_level').notNull().default('gentle'),
+  startedAt: integer('started_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
@@ -25,6 +37,8 @@ export const interviewRounds = sqliteTable('interview_rounds', {
   questionCount: integer('question_count').notNull().default(0),
   maxQuestions: integer('max_questions').notNull().default(10),
   summary: text('summary', { mode: 'json' }),
+  startedAt: integer('started_at', { mode: 'timestamp' }),
+  finishedAt: integer('finished_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
@@ -35,6 +49,8 @@ export const interviewMessages = sqliteTable('interview_messages', {
   role: text('role', { enum: ['interviewer', 'candidate', 'system'] }).notNull(),
   content: text('content').notNull(),
   metadata: text('metadata', { mode: 'json' }).default('{}'),
+  /** 该消息属于哪道题（含追问消息），报告追溯靠这一列 */
+  questionId: text('question_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 

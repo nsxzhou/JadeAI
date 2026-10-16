@@ -1,5 +1,5 @@
 /**
- * 把招聘模块存量的 UUID 主键换成短 id。
+ * 把面试官视角存量的 UUID 主键换成短 id。
  *
  * 短 id 是后加的，只对新建的记录生效，老的岗位和候选人还带着 36 位 UUID，
  * 一条 URL 里塞两个就没法看也没法念。这个脚本把它们一次性换掉。
@@ -14,7 +14,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { db, dbReady } from '../src/lib/db';
-import { recruitJobs, recruitCandidates, recruitEvaluations } from '../src/lib/db/schema';
+import { perspectiveJobs, perspectiveCandidates, perspectiveEvaluations } from '../src/lib/db/schema';
 import { shortId } from '../src/lib/recruit/short-id';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -22,9 +22,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 async function main() {
   await dbReady;
 
-  const jobs = await db.select().from(recruitJobs);
-  const candidates = await db.select().from(recruitCandidates);
-  const evaluations = await db.select().from(recruitEvaluations);
+  const jobs = await db.select().from(perspectiveJobs);
+  const candidates = await db.select().from(perspectiveCandidates);
+  const evaluations = await db.select().from(perspectiveEvaluations);
 
   const longJobs = jobs.filter((j: { id: string }) => UUID.test(j.id));
   const longCands = candidates.filter((c: { id: string }) => UUID.test(c.id));
@@ -41,12 +41,12 @@ async function main() {
   // ── 岗位：子表是候选人 ────────────────────────────────────────
   for (const job of longJobs) {
     const next = shortId();
-    await db.insert(recruitJobs).values({ ...job, id: next } as never);
+    await db.insert(perspectiveJobs).values({ ...job, id: next } as never);
     await db
-      .update(recruitCandidates)
+      .update(perspectiveCandidates)
       .set({ jobId: next } as never)
-      .where(eq(recruitCandidates.jobId, job.id));
-    await db.delete(recruitJobs).where(eq(recruitJobs.id, job.id));
+      .where(eq(perspectiveCandidates.jobId, job.id));
+    await db.delete(perspectiveJobs).where(eq(perspectiveJobs.id, job.id));
     console.log(`岗位 ${job.id} -> ${next}  (${job.title})`);
   }
 
@@ -56,17 +56,17 @@ async function main() {
     // 上一步可能已经改过 jobId，重新读一次拿最新的行
     const rows = await db
       .select()
-      .from(recruitCandidates)
-      .where(eq(recruitCandidates.id, cand.id))
+      .from(perspectiveCandidates)
+      .where(eq(perspectiveCandidates.id, cand.id))
       .limit(1);
     const fresh = rows[0];
     if (!fresh) continue;
-    await db.insert(recruitCandidates).values({ ...fresh, id: next } as never);
+    await db.insert(perspectiveCandidates).values({ ...fresh, id: next } as never);
     await db
-      .update(recruitEvaluations)
+      .update(perspectiveEvaluations)
       .set({ candidateId: next } as never)
-      .where(eq(recruitEvaluations.candidateId, cand.id));
-    await db.delete(recruitCandidates).where(eq(recruitCandidates.id, cand.id));
+      .where(eq(perspectiveEvaluations.candidateId, cand.id));
+    await db.delete(perspectiveCandidates).where(eq(perspectiveCandidates.id, cand.id));
     console.log(`候选人 ${cand.id} -> ${next}  (${fresh.name})`);
   }
 
@@ -74,9 +74,9 @@ async function main() {
   for (const ev of longEvals) {
     const next = shortId();
     await db
-      .update(recruitEvaluations)
+      .update(perspectiveEvaluations)
       .set({ id: next } as never)
-      .where(eq(recruitEvaluations.id, ev.id));
+      .where(eq(perspectiveEvaluations.id, ev.id));
     console.log(`评价 ${ev.id} -> ${next}`);
   }
 
