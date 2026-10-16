@@ -120,8 +120,7 @@ Rules:
 - If a question was never asked or never answered, set "answered" to false and "score" to 0. Do NOT invent an answer.
 - A JD-sourced question's premise, reference answer, or hypothetical reasoning is not evidence of prior experience. A gap-sourced question's premise, reference answer, or hypothetical reasoning is not evidence of prior experience. An explicit concrete prior-work account in the candidate's recorded answer or transcript may be treated as interview evidence and assessed for specificity and credibility; do not upgrade mere hypotheticals into experience.
 - Score each question 0-100 against its rubric.
-- For each dimension, give a 0-100 score based ONLY on the questions in that dimension that were actually answered. If no question in a dimension was answered, still return the dimension with score 0 — the caller will exclude it.
-- Do NOT compute any aggregate or total score. The caller computes it from the dimension scores and the configured weights.
+- Do NOT output dimension scores or an aggregate score. The caller derives each dimension from the per-question scores (weighted by the configured dimensions) and total from those.
 - "recommendation" is one of: strong_hire, hire, hold, no_hire. Base it on the whole picture, not just the numbers.
 - Explicitly match against the JD must-haves; bonus skills cannot compensate for an unverified must-have.
 - This is an internal evidence memo, not feedback addressed to the interviewee. Never use the candidate name,
@@ -151,7 +150,7 @@ Rules:
   to must-have JD coverage, strongest evidence, and the most important unresolved risk.
 
 Return JSON with this exact shape:
-{"questionEvaluations":[{"questionId":"","answerSummary":"","answered":true,"score":0,"highlights":[],"weaknesses":[]}],"dimensionScores":[{"key":"","score":0}],"strengths":[],"concerns":[],"overallComment":"","recommendation":"hold","recommendationReason":""}
+{"questionEvaluations":[{"questionId":"","answerSummary":"","answered":true,"score":0,"highlights":[],"weaknesses":[]}],"strengths":[],"concerns":[],"overallComment":"","recommendation":"hold","recommendationReason":""}
 
 ${JSON_RULE}`;
 

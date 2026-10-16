@@ -17,6 +17,8 @@ import type {
   DimensionScore as DomainDimensionScore,
   ImprovementItem as DomainImprovementItem,
   InterviewQuestion as DomainInterviewQuestion,
+  QuestionEvaluation as DomainQuestionEvaluation,
+  RoundEvaluation as DomainRoundEvaluation,
 } from '@/lib/interview-core/types';
 
 /** 领域名词统一从共享内核再导出，避免两套定义并存。 */
@@ -71,8 +73,16 @@ export interface InterviewRound {
 }
 
 export interface RoundSummary {
+  /** 该轮题目分数由服务端聚合；一道题都没评时为 null */
   score: number | null;
   feedback: string;
+  /**
+   * 逐题评估（叙述 + 档位内分）。
+   *
+   * 单题分数与档位的权威存储在 `interview_questions`；这里保存叙述与快照，
+   * 让「汇总不重读全文」和「逐轮报告」成立，也让重试只重跑失败的那一轮。
+   */
+  questions?: DomainQuestionEvaluation[];
 }
 
 export interface InterviewMessageMetadata {
@@ -94,33 +104,6 @@ export interface InterviewMessage {
   createdAt: Date | string;
 }
 
-export interface ReportDimensionScore {
-  dimension: string;
-  score: number;
-  maxScore: number;
-}
-
-export interface ReportQuestionEvaluation {
-  question: string;
-  answerSummary: string;
-  score: number;
-  highlights: string[];
-  weaknesses: string[];
-  referenceTips: string;
-  marked: boolean;
-  hinted: boolean;
-  skipped: boolean;
-}
-
-export interface ReportRoundEvaluation {
-  roundId: string;
-  interviewerType: string;
-  interviewerName: string;
-  score: number;
-  feedback: string;
-  questions: ReportQuestionEvaluation[];
-}
-
 /**
  * 报告里的坐标分。阶段 4 起会被服务端算出的 DimensionScore 取代，
  * 这里先保留报告本地形态，改名以区别于领域里的 DimensionScore。
@@ -129,8 +112,9 @@ export interface InterviewReport {
   id: string;
   sessionId: string;
   overallScore: number;
-  dimensionScores: ReportDimensionScore[];
-  roundEvaluations: ReportRoundEvaluation[];
+  /** 两层坐标的维度分，服务端算；阶段 4 起就是领域类型本身 */
+  dimensionScores: DomainDimensionScore[];
+  roundEvaluations: DomainRoundEvaluation[];
   overallFeedback: string;
   improvementPlan: DomainImprovementItem[];
   createdAt: Date | string;
@@ -148,7 +132,7 @@ export interface HistoryStats {
     id: string;
     jobTitle: string;
     overallScore: number;
-    dimensionScores: ReportDimensionScore[];
+    dimensionScores: DomainDimensionScore[];
     createdAt: string;
   }[];
 }

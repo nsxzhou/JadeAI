@@ -1,29 +1,87 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateText } from 'ai';
-import { getModel, extractAIConfig, AIConfigError, getJsonProviderOptions } from '@/lib/ai/provider';
+import { getModel, extractAIConfig, getJsonProviderOptions, AIConfigError } from '@/lib/ai/provider';
 import { resolveUser, getUserIdFromRequest } from '@/lib/auth/helpers';
 import { interviewRepository } from '@/lib/db/repositories/interview.repository';
-import { interviewReportSchema } from '@/lib/ai/interview-report-schema';
+import { roundEvaluationSchema, sessionSummarySchema } from '@/lib/ai/interview-report-schema';
+import { buildRoundEvaluationPrompt, buildSessionSummaryPrompt } from '@/lib/ai/interview-prompts';
 import { extractJson } from '@/lib/ai/extract-json';
+import { assembleRoundEvaluation, buildSessionReportNumbers } from '@/lib/interview-core/report';
+import { sessionDimensions } from '@/lib/interview/session-dimensions';
+import { normalizePrimaryStack, normalizeRoleFamily } from '@/lib/interview-core/role-family';
+import { rowToQuestion } from '@/lib/interview-core/legacy-questions';
+import type { InterviewMessageMetadata } from '@/types/interview';
+import type { RoundEvaluation } from '@/lib/interview-core/types';
+import { isReservedInterviewSegment } from '@/lib/interview/constants';
 import { dbReady } from '@/lib/db';
+
+export const maxDuration = 300;
+
+/** 从该轮消息里取控制标记，按题目 id 归类。 */
+function flagsByQuestion(messages: Array<{ questionId?: string | null; metadata?: unknown }>) {
+  const flags: Record<string, { marked?: boolean; hinted?: boolean }> = {};
+  for (const message of messages) {
+    const metadata = (message.metadata ?? {}) as InterviewMessageMetadata;
+    if (!message.questionId) continue;
+    if (metadata.marked || metadata.hinted) {
+      flags[message.questionId] = { marked: metadata.marked, hinted: metadata.hinted };
+    }
+  }
+  return flags;
+}
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await dbReady;
   const { id: sessionId } = await params;
+  if (isReservedInterviewSegment(sessionId)) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
   const fingerprint = getUserIdFromRequest(request);
   const user = await resolveUser(fingerprint);
   if (!user) return new Response('Unauthorized', { status: 401 });
 
-  const report = await interviewRepository.findReportBySessionId(sessionId);
-  if (!report) return NextResponse.json({ error: 'No report found' }, { status: 404 });
+  const session = await interviewRepository.findSession(sessionId);
+  if (!session || session.userId !== user.id) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
 
-  return NextResponse.json(report);
+  const report = await interviewRepository.findReportBySessionId(sessionId);
+  if (report) return NextResponse.json({ status: 'complete', report });
+
+  const rounds = await interviewRepository.findRoundsBySessionId(sessionId);
+  const pendingRoundIds: string[] = [];
+  for (const round of rounds) {
+    const questions = await interviewRepository.findQuestionsByRoundId(round.id);
+    const answered = questions.some(
+      (question: Record<string, unknown>) => String(question.answer ?? '').trim() && question.status !== 'skipped',
+    );
+    const evaluated = ((round.summary as { questions?: unknown[] } | null)?.questions?.length ?? 0) > 0;
+    if (answered && !evaluated) pendingRoundIds.push(String(round.id));
+  }
+
+  return NextResponse.json({
+    status: 'partial',
+    // 明示可重试的那一轮：客户端拿它做单轮重试，不必重跑整场。
+    failingRoundId: pendingRoundIds[0] ?? null,
+    pendingRoundIds,
+    roundCount: rounds.length,
+  });
 }
 
+/**
+ * 两段式生成报告。
+ *
+ * 1. 逐轮补评估（幂等）：某轮已评估就跳过；单轮失败只返回该轮 id，可单独重试。
+ * 2. 全场汇总：输入是各轮已落定的分数与逐题记要，**不重读全文**。
+ */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await dbReady;
     const { id: sessionId } = await params;
+    if (isReservedInterviewSegment(sessionId)) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
     const fingerprint = getUserIdFromRequest(request);
     const user = await resolveUser(fingerprint);
     if (!user) return new Response('Unauthorized', { status: 401 });
@@ -34,145 +92,195 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const existing = await interviewRepository.findReportBySessionId(sessionId);
-    if (existing) return NextResponse.json(existing);
+    if (existing) return NextResponse.json({ status: 'complete', report: existing });
 
-    const { model: modelId, locale = 'zh' } = await request.json();
+    const body = await request.json().catch(() => ({}));
+    const { model: modelId, locale = 'zh', roundId } = body as {
+      model?: string;
+      locale?: string;
+      roundId?: string;
+    };
+
     const aiConfig = extractAIConfig(request);
     const model = getModel(aiConfig, modelId);
+    const providerOptions = getJsonProviderOptions(aiConfig);
 
-    const roundsWithMessages = await interviewRepository.findAllMessagesBySessionId(sessionId);
+    const allRounds = await interviewRepository.findRoundsBySessionId(sessionId);
+    const targets = roundId ? allRounds.filter((round: { id: string }) => round.id === roundId) : allRounds;
+    if (targets.length === 0) {
+      return NextResponse.json({ error: 'Round not found' }, { status: 404 });
+    }
 
-    const conversationLog = roundsWithMessages.map(({ round, messages }) => {
-      const config = round.interviewerConfig as any;
-      return {
+    // ── 第一段：逐轮评估 ───────────────────────────────────────────────────
+    for (const round of targets) {
+      const summary = (round.summary ?? null) as { questions?: unknown[] } | null;
+      if ((summary?.questions?.length ?? 0) > 0) continue; // 幂等
+
+      const questions = await interviewRepository.findQuestionsByRoundId(round.id);
+      if (questions.length === 0) {
+        await interviewRepository.setRoundSummary(round.id, { score: null, feedback: '', questions: [] });
+        continue;
+      }
+
+      const config = (round.interviewerConfig ?? {}) as { name?: string };
+      const interviewerName = config.name ?? round.interviewerType;
+      const messages = await interviewRepository.findMessagesByRoundId(round.id);
+
+      const { system, prompt } = buildRoundEvaluationPrompt({
+        jobTitle: session.jobTitle || 'Interview',
+        jobDescription: session.jobDescription,
+        interviewerName,
         interviewerType: round.interviewerType,
-        interviewerName: config.name,
-        roundId: round.id,
-        messages: messages.map((m: { role: string; content: string; metadata: unknown }) => ({
-          role: m.role,
-          content: m.content,
-          metadata: m.metadata,
+        questions: questions.map((question: Record<string, unknown>) => ({
+          id: String(question.id),
+          question: String(question.question ?? ''),
+          intent: String(question.intent ?? ''),
+          rubric: (question.rubric ?? { excellent: '', pass: '', fail: '' }) as {
+            excellent: string;
+            pass: string;
+            fail: string;
+          },
+          answer: String(question.answer ?? ''),
+          skipped: question.status === 'skipped',
+        })),
+        locale,
+      });
+
+      let parsed;
+      try {
+        const result = await generateText({
+          model,
+          maxOutputTokens: 8192,
+          system,
+          prompt,
+          providerOptions,
+        });
+        parsed = extractJson(result.text, roundEvaluationSchema);
+      } catch (error) {
+        console.error(`report: round ${round.id} evaluation failed`, error);
+        return NextResponse.json({
+          status: 'partial',
+          failingRoundId: round.id,
+          error: '这一轮的评估生成失败，可单独重试。',
+        });
+      }
+
+      let assembled;
+      try {
+        assembled = assembleRoundEvaluation({
+          roundId: round.id,
+          interviewerType: round.interviewerType,
+          interviewerName,
+          questions: questions.map((question: Record<string, unknown>) => rowToQuestion(question)),
+          aiEvaluations: parsed.questions,
+          flags: flagsByQuestion(messages as Array<{ questionId?: string | null; metadata?: unknown }>),
+          feedback: parsed.feedback,
+        });
+      } catch (error) {
+        console.error(`report: round ${round.id} assembly failed`, error);
+        return NextResponse.json({
+          status: 'partial',
+          failingRoundId: round.id,
+          error: '这一轮的评估不完整，可单独重试。',
+        });
+      }
+
+      // 单题分与档位落库——报告里每个数字都由此可追溯回原始回答。
+      for (const evaluation of assembled.questions) {
+        if (!evaluation.questionId || !evaluation.answered) continue;
+        await interviewRepository.updateQuestion(evaluation.questionId, {
+          tier: evaluation.tier ?? null,
+          score: evaluation.score ?? null,
+        });
+      }
+
+      await interviewRepository.setRoundSummary(round.id, {
+        score: assembled.score,
+        feedback: assembled.feedback,
+        questions: assembled.questions,
+      });
+    }
+
+    // ── 第二段：全场汇总（不重读全文） ──────────────────────────────────────
+    const roundsAfter = await interviewRepository.findRoundsBySessionId(sessionId);
+    const questionRows = await interviewRepository.findQuestionsBySessionId(sessionId);
+    const questions = questionRows.map((row: Record<string, unknown>) => rowToQuestion(row));
+
+    const roleFamily = normalizeRoleFamily(session.roleFamilyKey);
+    const primaryStack = normalizePrimaryStack(session.primaryStack);
+    const dimensions = await sessionDimensions(locale, roleFamily, primaryStack);
+
+    const { overallScore, dimensionScores } = buildSessionReportNumbers(dimensions, questions);
+
+    const roundSummaries = roundsAfter.map((round: Record<string, unknown>) => {
+      const summary = (round.summary ?? {}) as {
+        score?: number | null;
+        feedback?: string;
+        questions?: Array<{ question?: string; score?: number; answerSummary?: string; weaknesses?: string[] }>;
+      };
+      const config = (round.interviewerConfig ?? {}) as { name?: string };
+      return {
+        interviewerName: config.name ?? String(round.interviewerType ?? ''),
+        score: summary.score ?? null,
+        feedback: summary.feedback ?? '',
+        questions: (summary.questions ?? []).map((question) => ({
+          question: question.question ?? '',
+          score: question.score ?? 0,
+          answerSummary: question.answerSummary ?? '',
+          weaknesses: question.weaknesses ?? [],
         })),
       };
     });
 
-    const lang = locale === 'zh' ? '中文' : 'English';
-
-    const reportPrompt = locale === 'zh'
-      ? `你是一位拥有丰富面试评估经验的人才评估专家。请基于以下面试对话记录，对候选人进行系统化、结构化的评估分析，生成专业的面试评估报告。请以 JSON 格式输出。
-
-# 岗位要求
-
-${session.jobDescription}
-
-# 面试对话记录
-
-${JSON.stringify(conversationLog, null, 2)}
-
-# 评估要求
-
-## 1. 综合评分（0-100）
-基于候选人在所有轮次中的整体表现给出综合分数。评分参考标准：
-- 90-100：远超岗位要求，强烈建议录用
-- 75-89：符合或略超岗位要求，建议录用
-- 60-74：基本符合，但有明显短板需考量
-- 40-59：部分能力不足，慎重考虑
-- 0-39：明显不满足岗位要求
-
-## 2. 能力维度评分（6-8 个维度，每个维度 0-100）
-根据岗位要求和面试表现，选择最相关的 6-8 个评估维度（如：技术深度、系统设计、编码能力、沟通表达、团队协作、学习能力、业务理解、问题解决等）。每个维度独立评分，用于生成雷达图。
-
-## 3. 逐轮逐题评估
-对每轮面试的每个问题进行独立评估：
-- 评分（1-5 分）：1=未能回答 / 2=基础薄弱 / 3=基本合格 / 4=表现良好 / 5=表现优秀
-- 亮点：候选人回答中值得肯定的具体表现
-- 不足：回答中暴露的问题或可改进之处
-- 参考思路：针对该问题，给出更好的回答方向或关键知识点提示，帮助候选人后续学习
-
-## 4. 总体反馈
-撰写 3-5 段专业、具有建设性的综合反馈，涵盖：候选人的核心优势、主要短板、与目标岗位的匹配度分析、以及是否推荐录用的建议。
-
-## 5. 改进计划
-按优先级（high/medium/low）列出候选人最需要提升的领域，每项附带：改进方向说明和推荐的具体学习资源（书籍、课程、文档、开源项目等）。
-
-# 特殊标记处理
-- \`"marked": true\`：候选人主动标记想复习的内容 → 在报告中重点标注
-- \`"hinted": true\`：候选人请求了提示 → 在评估中标注为"使用了提示"
-- \`"skipped": true\`：候选人跳过了该问题 → 标注为"已跳过"并相应扣分
-
-请用中文输出报告内容。`
-      : `You are an experienced talent assessment professional. Based on the following interview transcripts, produce a systematic, structured evaluation of the candidate. Output the report in JSON format.
-
-# Job Requirements
-
-${session.jobDescription}
-
-# Interview Transcripts
-
-${JSON.stringify(conversationLog, null, 2)}
-
-# Evaluation Requirements
-
-## 1. Overall Score (0-100)
-Score based on the candidate's performance across all rounds:
-- 90-100: Significantly exceeds requirements — strong hire
-- 75-89: Meets or exceeds requirements — recommended hire
-- 60-74: Generally meets requirements with notable gaps
-- 40-59: Partially qualified — proceed with caution
-- 0-39: Does not meet requirements
-
-## 2. Competency Dimension Scores (6-8 dimensions, each 0-100)
-Select 6-8 dimensions most relevant to the role (e.g., Technical Depth, System Design, Coding Ability, Communication, Teamwork, Learning Ability, Business Acumen, Problem Solving). Score each independently for the radar chart.
-
-## 3. Per-Round Per-Question Evaluation
-For each question in each round:
-- Score (1-5): 1=Unable to answer / 2=Weak fundamentals / 3=Adequate / 4=Good / 5=Excellent
-- Highlights: Specific strengths demonstrated in the answer
-- Weaknesses: Issues or areas for improvement revealed
-- Reference tips: Better answer direction or key knowledge points to help the candidate improve
-
-## 4. Overall Feedback
-Write 3-5 paragraphs of professional, constructive feedback covering: core strengths, main weaknesses, role-fit analysis, and hire recommendation.
-
-## 5. Improvement Plan
-List areas for improvement ranked by priority (high/medium/low), each with: description of what to improve and specific learning resources (books, courses, docs, open-source projects).
-
-# Special Markers
-- \`"marked": true\`: Candidate flagged this for review → highlight in report
-- \`"hinted": true\`: Candidate requested a hint → note as "hint used" in evaluation
-- \`"skipped": true\`: Candidate skipped the question → mark as "skipped" and factor into scoring
-
-Output the report in English.`;
-
-    const { text } = await generateText({
-      model,
-      maxOutputTokens: 16384,
-      system: `You are a professional interview evaluator. Output your evaluation as a single valid JSON object. Do NOT wrap the JSON in markdown code fences. Do NOT wrap the result in an array.
-
-The JSON MUST use EXACTLY these top-level keys (camelCase, English, no translation, no synonyms):
-- "overallScore" (number 0-100)
-- "dimensionScores" (array of { "dimension": string, "score": number 0-100, "maxScore": number })
-- "roundEvaluations" (array of { "roundId": string, "interviewerType": string, "interviewerName": string, "score": number 0-100, "feedback": string, "questions": array of { "question": string, "answerSummary": string, "score": number 1-5, "highlights": string[], "weaknesses": string[], "referenceTips": string, "marked": boolean, "hinted": boolean, "skipped": boolean } })
-- "overallFeedback" (string, 3-5 paragraphs)
-- "improvementPlan" (array of { "priority": "high"|"medium"|"low", "area": string, "description": string, "resources": string[] })
-
-DO NOT use alternative names like "comprehensiveScore", "capabilityScores", "direction", "feedback" instead of "overallFeedback", etc. Field names must match EXACTLY. All fields are REQUIRED.`,
-      prompt: reportPrompt,
-      providerOptions: getJsonProviderOptions(aiConfig),
+    const summaryPrompt = buildSessionSummaryPrompt({
+      jobTitle: session.jobTitle || 'Interview',
+      jobDescription: session.jobDescription,
+      roundSummaries,
+      dimensionScores: dimensionScores.map((dimension) => ({
+        label: dimension.label,
+        score: dimension.score,
+        weight: dimension.weight,
+      })),
+      overallScore,
+      locale,
     });
 
-    const report = extractJson(text, interviewReportSchema);
+    const summaryResult = await generateText({
+      model,
+      maxOutputTokens: 8192,
+      system: summaryPrompt.system,
+      prompt: summaryPrompt.prompt,
+      providerOptions,
+    });
+    const summary = extractJson(summaryResult.text, sessionSummarySchema);
+
+    const roundEvaluations: RoundEvaluation[] = roundsAfter.map((round: Record<string, unknown>) => {
+      const summary = (round.summary ?? {}) as {
+        score?: number | null;
+        feedback?: string;
+        questions?: RoundEvaluation['questions'];
+      };
+      const config = (round.interviewerConfig ?? {}) as { name?: string };
+      return {
+        roundId: String(round.id),
+        interviewerType: String(round.interviewerType ?? ''),
+        interviewerName: config.name ?? String(round.interviewerType ?? ''),
+        score: summary.score ?? 0,
+        feedback: summary.feedback ?? '',
+        questions: summary.questions ?? [],
+      };
+    });
 
     const saved = await interviewRepository.createReport({
       sessionId,
-      overallScore: report.overallScore,
-      dimensionScores: report.dimensionScores,
-      roundEvaluations: report.roundEvaluations,
-      overallFeedback: report.overallFeedback,
-      improvementPlan: report.improvementPlan,
+      overallScore,
+      dimensionScores,
+      roundEvaluations,
+      overallFeedback: summary.overallFeedback,
+      improvementPlan: summary.improvementPlan,
     });
 
-    return NextResponse.json(saved);
+    return NextResponse.json({ status: 'complete', report: saved });
   } catch (error) {
     if (error instanceof AIConfigError) {
       return new Response(JSON.stringify({ error: error.message }), { status: 401 });

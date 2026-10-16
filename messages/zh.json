@@ -878,7 +878,7 @@
       "roundComplete": "本轮面试结束",
       "allComplete": "所有面试轮次已完成",
       "generateReport": "生成面试报告",
-      "generatingReport": "正在生成报告...",
+      "generatingReport": "正在生成报告…",
       "preparingQuestions": "正在按目标岗位与简历出题…"
     },
     "report": {
@@ -918,7 +918,13 @@
       "backToLobby": "返回面试大厅",
       "markedForReview": "标记复习",
       "usedHint": "使用了提示",
-      "skippedQuestion": "已跳过"
+      "skippedQuestion": "已跳过",
+      "originalAnswer": "原始回答",
+      "generating": "正在生成报告…",
+      "partialError": "有 {count} 轮的评估还没生成完，可单独重试。",
+      "retryRound": "重试这一轮",
+      "retryAll": "重试整场",
+      "generationFailed": "报告生成失败，请检查 AI 配置后重试。"
     },
     "interviewers": {
       "hr": "HR面",

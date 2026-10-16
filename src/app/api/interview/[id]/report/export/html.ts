@@ -1,4 +1,4 @@
-import type { RoundEvaluation, ReportDimensionScore, ImprovementItem } from '@/types/interview';
+import type { RoundEvaluation, DimensionScore, ImprovementItem } from '@/types/interview';
 import { BRAND_COLORS } from '@/lib/brand-constants';
 
 function getGradeLabel(score: number): { zh: string; color: string } {
@@ -17,7 +17,7 @@ function starHtml(score: number): string {
 export function generateInterviewReportHtml(report: any, session: any): string {
   const grade = getGradeLabel(report.overallScore);
   const rounds = (report.roundEvaluations || []) as RoundEvaluation[];
-  const dimensions = (report.dimensionScores || []) as ReportDimensionScore[];
+  const dimensions = (report.dimensionScores || []) as DimensionScore[];
   const improvements = (report.improvementPlan || []) as ImprovementItem[];
   const date = new Date(session.createdAt).toLocaleDateString();
 
@@ -113,7 +113,7 @@ export function generateInterviewReportHtml(report: any, session: any): string {
     <div class="dim-grid">
       ${dimensions.map(d => `
         <div class="dim-item">
-          <span class="dim-name">${d.dimension}</span>
+          <span class="dim-name">${d.label || d.key}</span>
           <div class="dim-bar-outer"><div class="dim-bar-fill" style="width:${d.score}%"></div></div>
           <span class="dim-score">${d.score}</span>
         </div>

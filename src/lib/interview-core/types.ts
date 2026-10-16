@@ -264,6 +264,8 @@ export interface QuestionEvaluation {
   answerSummary: string;
   /** 记录中是否能找到对应回答 */
   answered?: boolean;
+  /** 候选人的回答原文：报告里每个数字都能由此追溯到原始回答 */
+  answer?: string;
   /** AI 给的档位；服务端 clamp 后的分数写在 score */
   tier?: QuestionTier;
   score: number;

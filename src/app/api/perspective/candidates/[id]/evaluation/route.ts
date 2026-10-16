@@ -4,7 +4,7 @@ import { getModel, extractAIConfig, getJsonProviderOptions, AIConfigError } from
 import { extractJson } from '@/lib/ai/extract-json';
 import { evaluationOutputSchema } from '@/lib/ai/perspective-schema';
 import { buildEvaluationPrompt } from '@/lib/ai/perspective-prompts';
-import { computeOverallScore } from '@/lib/perspective/scoring';
+import { computeDimensionScores, computeOverallScore } from '@/lib/perspective/scoring';
 import { hasAnyAnswer } from '@/lib/perspective/answers';
 import { questionsForEvaluation } from '@/lib/perspective/questions';
 import { finalizeEvaluationForHr } from '@/lib/perspective/evaluation';
@@ -90,14 +90,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .filter(Boolean) as string[],
     );
 
-    const scoreByKey = new Map(parsed.dimensionScores.map((d) => [d.key, d.score]));
-    const dimensionScores: DimensionScore[] = dimensions.map((d) => ({
-      key: d.key,
-      label: d.label,
-      layer: d.layer,
-      score: answeredDimensions.has(d.key) ? (scoreByKey.get(d.key) ?? 0) : 0,
-      weight: answeredDimensions.has(d.key) ? d.weight : 0,
-    }));
+    // 维度分由服务端从单题分聚合——AI 不再产出维度分，两次跑同一份回答得到同一个数。
+    const dimensionScores: DimensionScore[] = computeDimensionScores(
+      dimensions,
+      questionEvaluations.map((evaluation) => {
+        const question = questions.find((q) => q.id === evaluation.questionId);
+        const answered = Boolean(evaluation.answered);
+        return {
+          dimension: question?.dimension ?? '',
+          score: answered ? evaluation.score : null,
+          answer: answered ? 'answered' : '',
+          status: answered ? 'answered' : 'pending',
+        };
+      }),
+    );
 
     const overallScore = computeOverallScore(dimensionScores);
     const finalized = finalizeEvaluationForHr({

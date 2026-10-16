@@ -10,7 +10,7 @@ import { RoundEvaluation } from './round-evaluation';
 import { ImprovementPlan } from './improvement-plan';
 import { HistoryComparison } from './history-comparison';
 import { ExportButtons } from './export-buttons';
-import type { InterviewReport, InterviewSession, ReportDimensionScore, RoundEvaluation as RoundEvalType, ImprovementItem } from '@/types/interview';
+import type { InterviewReport, InterviewSession, DimensionScore, RoundEvaluation as RoundEvalType, ImprovementItem } from '@/types/interview';
 
 interface InterviewReportViewProps {
   report: InterviewReport;
@@ -35,7 +35,7 @@ export function InterviewReportView({ report, session }: InterviewReportViewProp
       </div>
 
       <ReportOverview report={report} session={session} />
-      <RadarChart dimensions={report.dimensionScores as ReportDimensionScore[]} />
+      <RadarChart dimensions={report.dimensionScores as DimensionScore[]} />
 
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">{t('roundEvaluation')}</h3>

@@ -9,9 +9,11 @@ interface RoundTransitionProps {
   nextInterviewer: InterviewerConfig;
   onContinue: () => void;
   isLastRound?: boolean;
+  /** 报告生成中：按钮不可再点，并把进度写在按钮上 */
+  busy?: boolean;
 }
 
-export function RoundTransition({ nextInterviewer, onContinue, isLastRound }: RoundTransitionProps) {
+export function RoundTransition({ nextInterviewer, onContinue, isLastRound, busy = false }: RoundTransitionProps) {
   const t = useTranslations('interview.room');
 
   return (
@@ -30,8 +32,8 @@ export function RoundTransition({ nextInterviewer, onContinue, isLastRound }: Ro
         </>
       )}
       {isLastRound && (
-        <Button onClick={onContinue} size="lg">
-          {t('generateReport')}
+        <Button onClick={onContinue} size="lg" disabled={busy}>
+          {busy ? t('generatingReport') : t('generateReport')}
         </Button>
       )}
     </div>

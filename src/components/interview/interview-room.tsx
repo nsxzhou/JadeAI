@@ -1,13 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import type { UIMessage } from 'ai';
 import { useRouter } from '@/i18n/routing';
 import { useInterviewStore } from '@/stores/interview-store';
 import type { InterviewMessageMetadata } from '@/types/interview';
 import { useInterviewChat } from '@/hooks/use-interview-chat';
-import { useSettingsStore } from '@/stores/settings-store';
+import { getAIHeaders, useSettingsStore } from '@/stores/settings-store';
 import { INIT_TRIGGER } from '@/lib/interview/constants';
 import { isRoundViewOnly } from '@/lib/interview/round-status';
 import { ProgressBar } from './progress-bar';
@@ -50,11 +50,13 @@ interface InterviewRoomProps {
 
 export function InterviewRoom({ sessionId, initialMessages }: InterviewRoomProps) {
   const t = useTranslations('interview.room');
+  const locale = useLocale();
   const router = useRouter();
   const { rounds, currentRoundIndex, setCurrentRoundIndex, advanceToNextRound, setIsGeneratingReport, status: sessionStatus, hydrateMessageFlags } =
     useInterviewStore();
   const [showTransition, setShowTransition] = useState(false);
   const [isViewingHistory, setIsViewingHistory] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReportLocal] = useState(false);
 
   const currentRound = rounds[currentRoundIndex];
   const interviewerConfig = currentRound?.interviewerConfig as InterviewerConfig;
@@ -162,10 +164,26 @@ export function InterviewRoom({ sessionId, initialMessages }: InterviewRoomProps
     sentInitRef.current = null;
   }, [advanceToNextRound, resetMessages]);
 
+  // 报告在「结束面试」时就生成，用户不用再经历一次「访问报告页才失败」。
   const handleGenerateReport = useCallback(async () => {
     setIsGeneratingReport(true);
+    setIsGeneratingReportLocal(true);
+    try {
+      const fp = localStorage.getItem('jade_fingerprint');
+      await fetch(`/api/interview/${sessionId}/report`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(fp ? { 'x-fingerprint': fp } : {}),
+          ...getAIHeaders(),
+        },
+        body: JSON.stringify({ locale, model: useSettingsStore.getState().aiModel }),
+      });
+    } catch {
+      // 失败不拦人：报告页会显示可重试的分段进度
+    }
     router.push(`/interview/${sessionId}/report`);
-  }, [sessionId, router, setIsGeneratingReport]);
+  }, [sessionId, router, setIsGeneratingReport, locale]);
 
   const lastAssistantMsg = [...messages].reverse().find((m) => m.role === 'assistant');
 
@@ -199,6 +217,7 @@ export function InterviewRoom({ sessionId, initialMessages }: InterviewRoomProps
           nextInterviewer={(nextRound?.interviewerConfig as InterviewerConfig) || interviewerConfig}
           onContinue={isLastRound ? handleGenerateReport : handleNextRound}
           isLastRound={isLastRound}
+          busy={isGeneratingReport}
         />
       </div>
     );

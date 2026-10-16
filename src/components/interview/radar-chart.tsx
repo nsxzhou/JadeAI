@@ -10,11 +10,11 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import type { ReportDimensionScore } from '@/types/interview';
+import type { DimensionScore } from '@/types/interview';
 
 interface RadarChartProps {
-  dimensions: ReportDimensionScore[];
-  comparisonDimensions?: ReportDimensionScore[];
+  dimensions: DimensionScore[];
+  comparisonDimensions?: DimensionScore[];
   comparisonLabel?: string;
 }
 
@@ -23,11 +23,11 @@ export function RadarChart({ dimensions, comparisonDimensions, comparisonLabel }
 
   const data = dimensions.map((d) => {
     const item: Record<string, string | number> = {
-      dimension: d.dimension,
+      dimension: d.label || d.key,
       score: d.score,
     };
     if (comparisonDimensions) {
-      const match = comparisonDimensions.find((c) => c.dimension === d.dimension);
+      const match = comparisonDimensions.find((c) => c.key === d.key);
       item.comparison = match?.score ?? 0;
     }
     return item;

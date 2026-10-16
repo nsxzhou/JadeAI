@@ -8,11 +8,13 @@ import type {
   InterviewRoundStatus,
   InterviewMessageRole,
   RoundSummary,
-  ReportDimensionScore,
-  ReportRoundEvaluation,
   ImprovementItem,
   InterviewMessageMetadata,
 } from '@/types/interview';
+import type {
+  DimensionScore as DomainDimensionScore,
+  RoundEvaluation as DomainRoundEvaluation,
+} from '@/lib/interview-core/types';
 
 export const interviewRepository = {
   // ── Sessions ────────────────────────────────────────────────────────────────
@@ -289,8 +291,8 @@ export const interviewRepository = {
   async createReport(data: {
     sessionId: string;
     overallScore: number;
-    dimensionScores: ReportDimensionScore[];
-    roundEvaluations: ReportRoundEvaluation[];
+    dimensionScores: DomainDimensionScore[];
+    roundEvaluations: DomainRoundEvaluation[];
     overallFeedback: string;
     improvementPlan: ImprovementItem[];
   }) {

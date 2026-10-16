@@ -203,3 +203,158 @@ export function buildEndRoundPrompt(locale: string): string {
   }
   return '[System] The candidate wants to conclude this round. Provide a brief round summary (one or two sentences covering strengths and areas for improvement), then end with [ROUND_COMPLETE] on its own line.';
 }
+
+/** 一轮评估的输入：只给本轮题目与候选人记录的回答。 */
+export interface RoundEvaluationPromptInput {
+  jobTitle: string;
+  jobDescription: string;
+  interviewerName: string;
+  interviewerType: string;
+  questions: Array<{
+    id: string;
+    question: string;
+    intent: string;
+    rubric: { excellent: string; pass: string; fail: string };
+    answer: string;
+    skipped: boolean;
+  }>;
+  locale: string;
+}
+
+/**
+ * 逐轮评估 prompt。
+ *
+ * 两段式报告的第一段：输入只有本轮内容，token 量与失败面都可控；
+ * 而且逐题给了服务端记下的回答原文，模型不用从整段速记里猜哪句对应哪题。
+ */
+export function buildRoundEvaluationPrompt(input: RoundEvaluationPromptInput): {
+  system: string;
+  prompt: string;
+} {
+  const blocks = input.questions
+    .map((question, index) => {
+      const answer = question.skipped
+        ? '（候选人跳过了这道题）'
+        : question.answer?.trim() || '（没有记录到回答）';
+      return `${index + 1}. [id: ${question.id}]
+Question: ${question.question}
+What it probes: ${question.intent}
+Excellent: ${question.rubric.excellent}
+Pass: ${question.rubric.pass}
+Fail: ${question.rubric.fail}
+Answer: ${answer}`;
+    })
+    .join('\n\n');
+
+  const system = input.locale === 'zh'
+    ? `你是面试评估专家。只评估本轮面试，不要参考其它轮次。
+
+对每一道【有回答的】题给出：
+- questionId：原样回填，不要改写
+- tier：excellent / pass / fail 三档之一
+- score：该档位内的具体分数（服务端会把它 clamp 进档位区间：excellent 85-100，pass 60-84，fail 0-59）
+- answerSummary：候选人的回答要点，一到两句
+- highlights：回答中值得肯定的具体表现
+- weaknesses：回答中暴露的问题，要具体
+
+有回答的题必须全部评估到，一题都不能漏；没有回答或跳过的题也要返回一条，tier 用 fail、score 用 0、answerSummary 用空串。
+不要输出维度分和总分——那些由服务端计算。
+
+只输出一个 JSON 对象：{"feedback":"本轮一到两句总评","questions":[{"questionId":"","tier":"pass","score":70,"answerSummary":"","highlights":[""],"weaknesses":[""]}]}`
+    : `You are an interview evaluator. Assess THIS round only; do not consider other rounds.
+
+For every question that HAS an answer, return:
+- questionId: copy it verbatim
+- tier: one of excellent / pass / fail
+- score: a number inside that tier (the server clamps it: excellent 85-100, pass 60-84, fail 0-59)
+- answerSummary: one or two sentences on what the candidate said
+- highlights: specific strengths in the answer
+- weaknesses: specific problems the answer exposed
+
+Every answered question must be covered — none may be skipped. Questions with no answer or skipped must also be returned with tier fail, score 0 and an empty answerSummary.
+Do not output dimension scores or an overall score — the server computes those.
+
+Output one JSON object only: {"feedback":"one or two sentences for this round","questions":[{"questionId":"","tier":"pass","score":70,"answerSummary":"","highlights":[""],"weaknesses":[""]}]}`;
+
+  const prompt = `Job title: ${input.jobTitle}
+
+Job description:
+${input.jobDescription}
+
+Interviewer: ${input.interviewerName} (${input.interviewerType})
+
+Questions and recorded answers for this round:
+${blocks}
+
+Evaluate this round now.`;
+
+  return { system, prompt };
+}
+
+/** 全场汇总的输入：各轮已落定的分数与逐题记要，不重读全文。 */
+export interface SessionSummaryPromptInput {
+  jobTitle: string;
+  jobDescription: string;
+  roundSummaries: Array<{
+    interviewerName: string;
+    score: number | null;
+    feedback: string;
+    questions: Array<{ question: string; score: number; answerSummary: string; weaknesses: string[] }>;
+  }>;
+  dimensionScores: Array<{ label: string; score: number; weight: number }>;
+  overallScore: number;
+  locale: string;
+}
+
+export function buildSessionSummaryPrompt(input: SessionSummaryPromptInput): {
+  system: string;
+  prompt: string;
+} {
+  const rounds = input.roundSummaries
+    .map((round, index) => {
+      const questions = round.questions
+        .map((question) => `  - ${question.question}（${question.score} 分）${question.answerSummary ? `：${question.answerSummary}` : ''}${question.weaknesses.length ? `；不足：${question.weaknesses.join('；')}` : ''}`)
+        .join('\n');
+      return `第 ${index + 1} 轮 · ${round.interviewerName}：${round.score ?? '未评分'} 分
+  总评：${round.feedback}
+${questions}`;
+    })
+    .join('\n\n');
+
+  const dimensions = input.dimensionScores
+    .map((dimension) => `- ${dimension.label}：${dimension.score} 分（权重 ${dimension.weight}）`)
+    .join('\n');
+
+  const system = input.locale === 'zh'
+    ? `你是面试评估专家。你拿到的是各轮已经打完分的评估与维度分，**不要重新评估回答**，只做全场汇总。
+
+给出：
+- overallFeedback：3-5 段建设性反馈，覆盖核心优势、主要短板、与目标岗位的匹配度
+- improvementPlan：按优先级（high/medium/low）列出最需要提升的领域，每项给出方向说明和具体学习资源
+
+只输出一个 JSON 对象：{"overallFeedback":"","improvementPlan":[{"priority":"high","area":"","description":"","resources":[""]}]}`
+    : `You are an interview evaluator. You are given each round's final scores and per-question notes — do NOT re-evaluate the answers; only summarise the session.
+
+Produce:
+- overallFeedback: 3-5 constructive paragraphs covering core strengths, main gaps, and fit for the target role
+- improvementPlan: the most important areas to improve, ranked (high/medium/low), each with a direction and concrete resources
+
+Output one JSON object only: {"overallFeedback":"","improvementPlan":[{"priority":"high","area":"","description":"","resources":[""]}]}`;
+
+  const prompt = `Job title: ${input.jobTitle}
+
+Job description:
+${input.jobDescription}
+
+Server-computed overall score: ${input.overallScore}
+
+Dimension scores (server-computed, weighted):
+${dimensions}
+
+Round-by-round results:
+${rounds}
+
+Write the session summary now.`;
+
+  return { system, prompt };
+}

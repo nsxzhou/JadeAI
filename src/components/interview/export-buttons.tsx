@@ -77,7 +77,7 @@ function generateMarkdown(report: InterviewReport, session: InterviewSession): s
 
   lines.push(`## 能力维度\n`);
   for (const d of report.dimensionScores) {
-    lines.push(`- **${d.dimension}**：${d.score}/100`);
+    lines.push(`- **${d.label || d.key}**：${d.score}/100`);
   }
   lines.push('');
 

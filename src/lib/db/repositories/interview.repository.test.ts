@@ -99,7 +99,7 @@ describe('interviewRepository — session list', () => {
     await interviewRepository.createReport({
       sessionId: withReport.id,
       overallScore: 82,
-      dimensionScores: [{ dimension: 'general_logic', score: 82, maxScore: 100 }],
+      dimensionScores: [{ key: 'general_logic', label: '逻辑思维', layer: 'general', score: 82, weight: 1 }],
       roundEvaluations: [],
       overallFeedback: '不错',
       improvementPlan: [],

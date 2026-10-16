@@ -149,7 +149,6 @@ describe('evaluationOutputSchema', () => {
         weaknesses: ['没说清最终收益'],
       },
     ],
-    dimensionScores: [{ key: 'logic', score: 82 }],
     strengths: ['逻辑清晰'],
     concerns: ['缺乏大规模系统经验'],
     overallComment: '整体符合预期',
@@ -160,17 +159,16 @@ describe('evaluationOutputSchema', () => {
   it('解析正常的评价输出', () => {
     const result = extractJson(JSON.stringify(valid), evaluationOutputSchema);
     expect(result.recommendation).toBe('hire');
-    expect(result.dimensionScores[0].score).toBe(82);
+    // 维度分不再由模型给出：服务端从单题分聚合。
+    expect(result).not.toHaveProperty('dimensionScores');
   });
 
   it('分数超出 0-100 时钳到边界，而不是整份丢弃', () => {
     const raw = JSON.stringify({
       ...valid,
-      dimensionScores: [{ key: 'logic', score: 120 }],
       questionEvaluations: [{ ...valid.questionEvaluations[0], score: -5 }],
     });
     const result = extractJson(raw, evaluationOutputSchema);
-    expect(result.dimensionScores[0].score).toBe(100);
     expect(result.questionEvaluations[0].score).toBe(0);
   });
 

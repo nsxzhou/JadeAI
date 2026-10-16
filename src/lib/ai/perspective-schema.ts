@@ -179,12 +179,6 @@ export const evaluationOutputSchema = z.object({
       weaknesses: stringArray,
     }),
   ),
-  dimensionScores: z.array(
-    z.object({
-      key: z.string(),
-      score: score0to100,
-    }),
-  ),
   strengths: stringArray,
   concerns: stringArray,
   overallComment: z.union([z.string(), z.null(), z.undefined()]).transform((v) => v ?? ''),

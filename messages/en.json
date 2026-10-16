@@ -878,7 +878,7 @@
       "roundComplete": "This round is complete",
       "allComplete": "All interview rounds completed",
       "generateReport": "Generate Report",
-      "generatingReport": "Generating report...",
+      "generatingReport": "Generating report…",
       "preparingQuestions": "Planning questions from the target role and your resume…"
     },
     "report": {
@@ -918,7 +918,13 @@
       "backToLobby": "Back to Lobby",
       "markedForReview": "Marked for Review",
       "usedHint": "Used Hint",
-      "skippedQuestion": "Skipped"
+      "skippedQuestion": "Skipped",
+      "originalAnswer": "Original answer",
+      "generating": "Generating the report…",
+      "partialError": "{count} round(s) still need evaluation — you can retry just those.",
+      "retryRound": "Retry this round",
+      "retryAll": "Retry all",
+      "generationFailed": "Report generation failed. Check your AI settings and retry."
     },
     "interviewers": {
       "hr": "HR",
