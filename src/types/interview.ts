@@ -91,6 +91,8 @@ export interface InterviewMessageMetadata {
   skipped?: boolean;
   /** 该轮已到最后一题，前端据此转入轮次收尾。 */
   roundComplete?: boolean;
+  /** 这条消息是本题超时留下的标记，不是候选人写的答案 */
+  timedOut?: boolean;
   /** 本轮题目在 DB 里的 id（阶段 5 起由槽位绑定），暂无则为 null。 */
   questionId?: string | null;
 }

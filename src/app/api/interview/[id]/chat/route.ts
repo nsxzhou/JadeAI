@@ -7,7 +7,9 @@ import { resumeRepository } from '@/lib/db/repositories/resume.repository';
 import { buildInterviewSystemPrompt, type InterviewSlotPrompt } from '@/lib/ai/interview-prompts';
 import { planInterviewTurn, type CandidateTurnKind } from '@/lib/interview-core/turn';
 import type { QuestionStatus } from '@/lib/interview-core/types';
-import { HINT_MESSAGE, INIT_TRIGGER, SKIP_MESSAGE } from '@/lib/interview/constants';
+import { HINT_MESSAGE, INIT_TRIGGER, SKIP_MESSAGE, TIMEOUT_MESSAGE } from '@/lib/interview/constants';
+import { QUESTION_TIME_LIMIT_SEC } from '@/lib/interview-core/types';
+import { elapsedSec } from '@/lib/interview-core/timing';
 import { dbReady } from '@/lib/db';
 
 /** 一条消息里取出文本内容，兼容 AI SDK 的 parts 与纯 content 两种形态。 */
@@ -23,6 +25,8 @@ function messageText(message: {
 function classifyCandidateTurn(content: string): CandidateTurnKind {
   if (content.trim() === HINT_MESSAGE) return 'hint';
   if (content.trim() === SKIP_MESSAGE) return 'skip';
+  // 超时不是候选人写的，但要走同一条推进路径，且必须把已写内容留下。
+  if (content.trim() === TIMEOUT_MESSAGE) return 'timeout';
   return 'answer';
 }
 
@@ -65,7 +69,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return new Response('Not found', { status: 404 });
     }
 
-    const { messages, roundId, model: modelId, locale = 'zh' } = await request.json();
+    const { messages, roundId, model: modelId, locale = 'zh', timedOut: timedOutFlag = false } = await request.json();
 
     const round = await interviewRepository.findRound(roundId);
     if (!round || round.sessionId !== sessionId) {
@@ -100,8 +104,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const incoming = messages.length > 0 ? messages[messages.length - 1] : null;
     const incomingText = incoming?.role === 'user' ? messageText(incoming) : '';
     const isInitTrigger = incomingText === INIT_TRIGGER;
+    const isTimeoutMarker = incomingText.trim() === TIMEOUT_MESSAGE;
     const hasCandidateMessage = Boolean(incomingText) && !isInitTrigger;
-    const turnKind: CandidateTurnKind = hasCandidateMessage ? classifyCandidateTurn(incomingText) : 'none';
+    // 超时可以由客户端显式声明（带着已写内容提交），也可以是超时标记本身。
+    const isTimeoutTurn = Boolean(timedOutFlag) || isTimeoutMarker;
+    const turnKind: CandidateTurnKind = hasCandidateMessage
+      ? (isTimeoutTurn ? 'timeout' : classifyCandidateTurn(incomingText))
+      : 'none';
 
     const plan = planInterviewTurn({
       questions: questionStates,
@@ -109,14 +118,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       candidateTurn: turnKind,
     });
 
+    const roundMessages = hasCandidateMessage
+      ? await interviewRepository.findMessagesByRoundId(roundId)
+      : [];
+
     // 候选人的回答（或跳过）落库，并挂到它对应的那道题上——报告追溯到这一行。
     let candidateMessageId: string | null = null;
     if (hasCandidateMessage) {
+      // 超时标记本身不是回答内容：留一行可追溯的消息，但不写成答案。
       const saved = await interviewRepository.addMessage({
         roundId,
         role: 'candidate',
         content: incomingText,
         questionId: plan.answeringQuestionId,
+        metadata: isTimeoutTurn ? { timedOut: true } : undefined,
       });
       candidateMessageId = saved?.id ?? null;
 
@@ -128,6 +143,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
       if (plan.answeringQuestionId && turnKind === 'skip') {
         await interviewRepository.updateQuestion(plan.answeringQuestionId, { status: 'skipped' });
+      }
+      if (plan.answeringQuestionId && turnKind === 'timeout') {
+        // 超时按本题真实用时记账（上限 180 秒）。已经写下的内容要留下——绝不丢答案，
+        // 所以带着内容提交时照样写进 answer，只是状态标成 timed_out。
+        const askedAt = roundMessages
+          .filter((message: { questionId?: string | null; role?: string; createdAt?: Date | string }) =>
+            message.questionId === plan.answeringQuestionId && message.role === 'interviewer')
+          .map((message: { createdAt?: Date | string }) => new Date(message.createdAt ?? Date.now()).getTime())
+          .sort((left: number, right: number) => left - right)[0];
+        await interviewRepository.updateQuestion(plan.answeringQuestionId, {
+          ...(isTimeoutMarker ? {} : { answer: incomingText }),
+          status: 'timed_out',
+          timedOut: true,
+          timeSpentSec: elapsedSec(askedAt ?? null, Date.now(), QUESTION_TIME_LIMIT_SEC),
+        });
       }
     }
 
@@ -158,6 +188,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       maxQuestions: round.maxQuestions,
       isFinalQuestion: isClosingTurn,
       currentSlot,
+      stressLevel: (session.stressLevel as string | null) ?? 'gentle',
       locale,
     });
 

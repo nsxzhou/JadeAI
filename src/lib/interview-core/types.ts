@@ -276,6 +276,8 @@ export interface QuestionEvaluation {
   marked?: boolean;
   hinted?: boolean;
   skipped?: boolean;
+  /** 本题超时：报告要标注出来 */
+  timedOut?: boolean;
 }
 
 /** 一轮的评估（逐轮生成，不重读全文）。 */

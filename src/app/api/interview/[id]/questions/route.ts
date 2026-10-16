@@ -8,8 +8,10 @@ import { sessionDimensions } from '@/lib/interview/session-dimensions';
 import { planQuestionCounts, splitQuestionCountAcrossRounds } from '@/lib/interview-core/dimension';
 import { normalizePrimaryStack, normalizeRoleFamily } from '@/lib/interview-core/role-family';
 import { questionToRow } from '@/lib/interview-core/legacy-questions';
+import { candidateQuestionsSlot } from '@/lib/interview-core/reversal';
 import { QUESTION_COUNT_PRESETS, type QuestionCountPreset } from '@/lib/interview-core/types';
 import { isReservedInterviewSegment } from '@/lib/interview/constants';
+import { rejectedQuestionEdits } from '@/lib/interview/question-edit';
 import { dbReady } from '@/lib/db';
 
 export const maxDuration = 300;
@@ -99,6 +101,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       await interviewRepository.updateRoundMaxQuestions(round.id, count);
     }
 
+    // 反问环节固定在最后：它在预设题数之外，计入通用层的沟通表达。
+    const lastRound = rounds[rounds.length - 1];
+    const reversal = candidateQuestionsSlot(locale);
+    rows.push(questionToRow(reversal, { roundId: lastRound.id }, perRound[rounds.length - 1]));
+    await interviewRepository.updateRoundMaxQuestions(
+      lastRound.id,
+      perRound[rounds.length - 1] + 1,
+    );
+
     await interviewRepository.insertQuestions(rows);
 
     const saved = await interviewRepository.findQuestionsBySessionId(sessionId);
@@ -129,4 +140,47 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   const questions = await interviewRepository.findQuestionsBySessionId(sessionId);
   return NextResponse.json({ questions });
+}
+
+/**
+ * 提交即定：已经提交的回答不可回改（规则见 `@/lib/interview/question-edit`）。
+ * 想改答案只能重练。
+ */
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  await dbReady;
+  const { id: sessionId } = await params;
+  if (isReservedInterviewSegment(sessionId)) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+  const fingerprint = getUserIdFromRequest(request);
+  const user = await resolveUser(fingerprint);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const session = await interviewRepository.findSession(sessionId);
+  if (!session || session.userId !== user.id) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const { questionId, ...changes } = body as Record<string, unknown>;
+  if (typeof questionId !== 'string' || !questionId) {
+    return NextResponse.json({ error: 'questionId required' }, { status: 400 });
+  }
+
+  const illegal = rejectedQuestionEdits(changes);
+  if (illegal.length > 0) {
+    return NextResponse.json(
+      { error: `Submitted answers are immutable; only markedWeak can be changed (rejected: ${illegal.join(', ')})` },
+      { status: 400 },
+    );
+  }
+
+  // 只能改本场次里的题
+  const owned = await interviewRepository.findQuestionsBySessionId(sessionId);
+  if (!owned.some((question: { id: string }) => question.id === questionId)) {
+    return NextResponse.json({ error: 'Question not found' }, { status: 404 });
+  }
+
+  await interviewRepository.updateQuestion(questionId, { markedWeak: Boolean(changes.markedWeak) });
+  return NextResponse.json({ success: true });
 }

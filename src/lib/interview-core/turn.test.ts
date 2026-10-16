@@ -86,3 +86,25 @@ describe('resolvedQuestionCount', () => {
     expect(resolvedQuestionCount([q('q1', 'answered'), q('q2', 'asked'), q('q3', 'timed_out')])).toBe(2);
   });
 });
+
+describe('planInterviewTurn — 超时', () => {
+  it('超时算解决并推进到下一题', () => {
+    const plan = planInterviewTurn({
+      questions: [q('q1', 'asked'), q('q2')],
+      currentQuestionId: 'q1',
+      candidateTurn: 'timeout',
+    });
+    expect(plan.answeringQuestionId).toBe('q1');
+    expect(plan.askQuestionId).toBe('q2');
+  });
+
+  it('最后一题超时同样收轮', () => {
+    const plan = planInterviewTurn({
+      questions: [q('q1', 'answered'), q('q2', 'asked')],
+      currentQuestionId: 'q2',
+      candidateTurn: 'timeout',
+    });
+    expect(plan.askQuestionId).toBeNull();
+    expect(plan.roundResolved).toBe(true);
+  });
+});

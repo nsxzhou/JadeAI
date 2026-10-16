@@ -924,7 +924,8 @@
       "partialError": "有 {count} 轮的评估还没生成完，可单独重试。",
       "retryRound": "重试这一轮",
       "retryAll": "重试整场",
-      "generationFailed": "报告生成失败，请检查 AI 配置后重试。"
+      "generationFailed": "报告生成失败，请检查 AI 配置后重试。",
+      "timedOutQuestion": "本题超时"
     },
     "interviewers": {
       "hr": "HR面",

@@ -8,7 +8,7 @@ import { useInterviewStore } from '@/stores/interview-store';
 import type { InterviewMessageMetadata } from '@/types/interview';
 import { useInterviewChat } from '@/hooks/use-interview-chat';
 import { getAIHeaders, useSettingsStore } from '@/stores/settings-store';
-import { INIT_TRIGGER } from '@/lib/interview/constants';
+import { INIT_TRIGGER, TIMEOUT_MESSAGE } from '@/lib/interview/constants';
 import { isRoundViewOnly } from '@/lib/interview/round-status';
 import { ProgressBar } from './progress-bar';
 import { InterviewerBanner } from './interviewer-banner';
@@ -17,6 +17,7 @@ import { MessageInput } from './message-input';
 import { useInterviewControls } from './control-bar';
 import { RoundTransition } from './round-transition';
 import { ThinkingIndicator } from './thinking-indicator';
+import { QuestionTimer } from './question-timer';
 import type { InterviewerConfig } from '@/types/interview';
 
 /** Convert DB messages to UIMessage format */
@@ -62,7 +63,7 @@ export function InterviewRoom({ sessionId, initialMessages }: InterviewRoomProps
   const interviewerConfig = currentRound?.interviewerConfig as InterviewerConfig;
   const isRoundDone = isRoundViewOnly(currentRound?.status, sessionStatus);
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, resetMessages, sendMessage, setMessages } =
+  const { messages, input, handleInputChange, handleSubmit, isLoading, resetMessages, sendMessage, sendTimeout, setMessages, setInput } =
     useInterviewChat({
       sessionId,
       roundId: currentRound?.id || '',
@@ -186,6 +187,15 @@ export function InterviewRoom({ sessionId, initialMessages }: InterviewRoomProps
   }, [sessionId, router, setIsGeneratingReport, locale]);
 
   const lastAssistantMsg = [...messages].reverse().find((m) => m.role === 'assistant');
+  // 正在问的那道题：由面试官消息的 metadata 带出，用来重启倒计时。
+  const currentQuestionId = (lastAssistantMsg?.metadata as { questionId?: string | null } | undefined)?.questionId ?? null;
+
+  // 到点就把已写内容交上去并推进下一题；没写内容也照样推进，绝不丢答案也不卡住。
+  const handleTimeout = useCallback(() => {
+    if (isLoading || isViewingHistory) return;
+    sendTimeout(input.trim() || TIMEOUT_MESSAGE);
+    setInput('');
+  }, [input, isLoading, isViewingHistory, sendTimeout, setInput]);
 
   const handleTriggerAI = useCallback((text: string) => {
     sendMessage({ text });
@@ -242,7 +252,10 @@ export function InterviewRoom({ sessionId, initialMessages }: InterviewRoomProps
         </div>
       ) : (
         <div className="space-y-2 border-t border-zinc-100 pt-2 pb-2 dark:border-zinc-800">
-          {controls}
+          <div className="flex items-center justify-between gap-2">
+            {controls}
+            <QuestionTimer questionId={currentQuestionId} onExpire={handleTimeout} />
+          </div>
           <MessageInput
             input={input}
             isLoading={isLoading}

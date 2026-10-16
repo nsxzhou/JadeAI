@@ -1,6 +1,10 @@
+/** The trigger message sent to start a round */
+export const TIMEOUT_MESSAGE = '[系统] 本题超时，进入下一题。';
+
 /** Messages that should be hidden from the chat UI */
 export const HIDDEN_MESSAGES = new Set([
   '你好，我准备好了，请开始面试。',
+  '[系统] 本题超时，进入下一题。',
 ]);
 
 /**

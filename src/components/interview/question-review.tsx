@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Star, Bookmark, Lightbulb, SkipForward, ChevronDown, ChevronRight } from 'lucide-react';
+import { Star, Bookmark, Lightbulb, SkipForward, ChevronDown, ChevronRight, Timer } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { QuestionEvaluation } from '@/types/interview';
@@ -44,6 +44,12 @@ export function QuestionReview({ evaluation, index }: QuestionReviewProps) {
           <Badge variant="outline" className="text-xs text-zinc-500">
             <SkipForward className="mr-1 h-3 w-3" />
             {t('skippedQuestion')}
+          </Badge>
+        )}
+        {evaluation.timedOut && (
+          <Badge variant="outline" className="text-xs text-red-500">
+            <Timer className="mr-1 h-3 w-3" />
+            {t('timedOutQuestion')}
           </Badge>
         )}
       </div>

@@ -79,6 +79,7 @@ export function assembleRoundEvaluation(input: {
         marked: flags.marked ?? false,
         hinted: flags.hinted ?? false,
         skipped: question.status === 'skipped',
+        timedOut: question.status === 'timed_out',
       };
     }
 

@@ -924,7 +924,8 @@
       "partialError": "{count} round(s) still need evaluation — you can retry just those.",
       "retryRound": "Retry this round",
       "retryAll": "Retry all",
-      "generationFailed": "Report generation failed. Check your AI settings and retry."
+      "generationFailed": "Report generation failed. Check your AI settings and retry.",
+      "timedOutQuestion": "Timed out"
     },
     "interviewers": {
       "hr": "HR",

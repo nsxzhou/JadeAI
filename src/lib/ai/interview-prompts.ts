@@ -1,5 +1,20 @@
 import type { InterviewerConfig } from '@/types/interview';
 
+const STRESS_GUIDANCE: Record<string, { zh: string; en: string }> = {
+  gentle: {
+    zh: '- 抓模糊表述：出现「大概 / 差不多 / 我们团队 / 应该」这类说法时不要放过，逼出确切数字、时间和**个人**贡献。这是默认强度，语气仍然正常。',
+    en: '- Pin down vague answers: when you hear "about", "roughly", "our team", "probably", do not let it slide — get exact numbers, timelines and the candidate\'s *personal* contribution. This is the default level; the tone stays normal.',
+  },
+  standard: {
+    zh: '- 强度比默认高一档：对含糊或没有证据的回答直接指出「这没有回答我的问题」，要求重答，并连着追两层。',
+    en: '- One notch above default: when an answer is vague or unsupported, say plainly that it did not answer the question, ask for it again, and follow up two levels deep.',
+  },
+  sharp: {
+    zh: '- 强度再高一档：对有漏洞的论证直接反驳、追问到底。**只针对论证，不做人身攻击、不羞辱、不贬低经历。**',
+    en: '- Turn the intensity up further: challenge flawed reasoning directly and keep probing. **Attack the argument only — never the person; no humiliation, no belittling their experience.**',
+  },
+};
+
 export interface InterviewSlotPrompt {
   question: string;
   intent: string;
@@ -19,9 +34,12 @@ export function buildInterviewSystemPrompt(params: {
    * 不再自行决定问什么、也不再自行换方向。
    */
   currentSlot?: InterviewSlotPrompt | null;
+  /** 压力面强度：默认温和，只调强度，不做尖锐羞辱式 */
+  stressLevel?: string;
   locale: string;
 }) {
   const { interviewer, jobDescription, resumeContent, maxQuestions, isFinalQuestion, currentSlot, locale } = params;
+  const stress = STRESS_GUIDANCE[params.stressLevel ?? 'gentle'] ?? STRESS_GUIDANCE.gentle;
   const lang = locale === 'zh' ? '中文' : 'English';
 
   if (locale === 'zh') {
@@ -82,6 +100,8 @@ ${isFinalQuestion ? '- **这是本轮最后一个问题。** 问完这一问后�
 - 追问应基于候选人的实际回答内容，探查深度和真实性，而不是机械展开预设问题。
 - 当候选人已经给出充分、到位的回答时，不要为了追问而追问，自然过渡到下一主题。
 - 问题之间要有逻辑关联或自然过渡，避免给人"逐条念清单"的感觉。
+
+${stress.zh}
 
 ## 交互风格
 - 说话像一个有经验的面试官，而非 AI 助手。保持自然口语化表达。
@@ -161,6 +181,8 @@ ${isFinalQuestion ? '- **This is the final question of this round.** After it, d
 - Follow-ups should stem from the candidate's actual responses — probe for depth and authenticity rather than mechanically running through preset questions.
 - When the candidate gives a thorough, well-articulated answer, don't force follow-ups. Transition naturally.
 - Maintain logical flow between topics. Avoid a "reading from a checklist" feel.
+
+${stress.en}
 
 ## Interaction Style
 - Speak like an experienced interviewer, not an AI assistant. Use natural, conversational language.

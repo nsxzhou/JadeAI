@@ -22,6 +22,9 @@ export function useInterviewChat({ sessionId, roundId, selectedModel }: UseInter
   const roundIdRef = useRef(roundId);
   roundIdRef.current = roundId;
 
+  // 超时提交要带上标记：内容照常留下，但服务端把这道题记成 timed_out。
+  const timedOutRef = useRef(false);
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -30,6 +33,7 @@ export function useInterviewChat({ sessionId, roundId, selectedModel }: UseInter
           roundId: roundIdRef.current,
           model: modelRef.current,
           locale,
+          timedOut: timedOutRef.current,
         }),
         headers: () => {
           const fp = typeof window !== 'undefined' ? localStorage.getItem('jade_fingerprint') : null;
@@ -91,6 +95,18 @@ export function useInterviewChat({ sessionId, roundId, selectedModel }: UseInter
     [input, sendMessage, isLoading]
   );
 
+  /** 倒计时归零时提交：把已写内容（可能为空）连同超时标记一起发出去。 */
+  const sendTimeout = useCallback(
+    (text: string) => {
+      if (isLoading) return;
+      timedOutRef.current = true;
+      void sendMessage({ text }).finally(() => {
+        timedOutRef.current = false;
+      });
+    },
+    [isLoading, sendMessage],
+  );
+
   const resetMessages = useCallback(() => {
     setMessages([]);
   }, [setMessages]);
@@ -105,6 +121,8 @@ export function useInterviewChat({ sessionId, roundId, selectedModel }: UseInter
     error,
     resetMessages,
     sendMessage,
+    sendTimeout,
     setMessages,
+    setInput,
   };
 }

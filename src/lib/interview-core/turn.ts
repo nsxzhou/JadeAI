@@ -22,6 +22,8 @@ export type CandidateTurnKind =
   | 'skip'
   /** 请求提示：题目不变，继续在这道题上追 */
   | 'hint'
+  /** 本题超时：保存已写内容、自动进入下一题 */
+  | 'timeout'
   /** 开场触发语或没有对应题目 */
   | 'none';
 
@@ -69,6 +71,10 @@ export function planInterviewTurn(input: {
   if (answeringQuestionId && input.candidateTurn === 'skip') {
     const target = states.find((question) => question.id === answeringQuestionId);
     if (target) target.status = 'skipped';
+  }
+  if (answeringQuestionId && input.candidateTurn === 'timeout') {
+    const target = states.find((question) => question.id === answeringQuestionId);
+    if (target) target.status = 'timed_out';
   }
 
   const ask = states.find((question) => !isResolved(question.status))?.id ?? null;
