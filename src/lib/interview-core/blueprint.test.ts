@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { validateBlueprint } from './blueprint';
+import {
+  assembleGeneratedQuestions,
+  bindQuestionsToSlots,
+  canonicalizeBlueprintEvidence,
+  groupBlueprintSlots,
+  validateBlueprint,
+} from './blueprint';
 import { resolveDimensions, toDimensionConfigs, planQuestionCounts } from './dimension';
-import type { InterviewBlueprint, QuestionSlot } from './types';
+import type { InterviewBlueprint, InterviewQuestion, QuestionSlot } from './types';
 
 const LABELS = (key: string) => key;
 const dimensions = toDimensionConfigs(resolveDimensions('backend', 'go'), LABELS);
@@ -106,5 +112,102 @@ describe('validateBlueprint', () => {
   it('enforceJdCoverage 时 JD 覆盖不足被拒绝', () => {
     const blueprint = validBlueprint();
     expect(() => validateBlueprint(blueprint, { ...options, enforceJdCoverage: true })).toThrow();
+  });
+});
+
+// ── 从旧适配层（`@/lib/ai/perspective-blueprint`）搬过来的用例 ────────────────
+// 泛化后这两个函数只在内核里存在一份，测试也跟着走。
+
+describe('canonicalizeBlueprintEvidence', () => {
+  it('把模型改写的证据绑定回对应来源列表中的原文', () => {
+    const result = canonicalizeBlueprintEvidence({
+      resumeFacts: ['负责高并发服务开发', '参与前端页面维护'],
+      jdRequirements: ['熟悉 Redis 和 Kafka'],
+      gaps: [],
+      slots: [{
+        category: 'project_deep_dive',
+        source: 'resume',
+        dimension: 'project_deep_dive',
+        topic: '高并发服务',
+        evidence: '候选人负责过高并发后端服务的开发',
+        difficulty: 'medium',
+      }],
+    });
+
+    expect(result.slots[0].evidence).toBe('负责高并发服务开发');
+  });
+});
+
+function rawQuestion(question: string): InterviewQuestion {
+  return {
+    dimension: '模型乱给的维度',
+    category: 'hr_motivation',
+    source: 'resume',
+    evidence: '模型乱给的证据',
+    question,
+    intent: 'i',
+    rubric: { excellent: '', pass: '', fail: '' },
+    followUps: [],
+    referencePoints: [],
+    estimatedMinutes: 5,
+    difficulty: 'easy',
+  };
+}
+
+describe('groupBlueprintSlots / bindQuestionsToSlots / assembleGeneratedQuestions', () => {
+  it('按维度分组并保留槽位原始下标', () => {
+    const slots: QuestionSlot[] = [
+      slot({ dimension: 'general_communication' }),
+      slot({ dimension: 'middleware_database' }),
+      slot({ dimension: 'general_communication' }),
+    ];
+    expect(groupBlueprintSlots(slots)).toEqual([
+      {
+        dimension: 'general_communication',
+        slots: [{ ...slots[0], slotIndex: 0 }, { ...slots[2], slotIndex: 2 }],
+      },
+      { dimension: 'middleware_database', slots: [{ ...slots[1], slotIndex: 1 }] },
+    ]);
+  });
+
+  it('题目的 category/source/dimension/evidence/difficulty 一律以槽位为准', () => {
+    const [bound] = bindQuestionsToSlots([rawQuestion('q')], [slot({ dimension: 'middleware_database' })]);
+    expect(bound).toMatchObject({
+      dimension: 'middleware_database',
+      category: 'project_deep_dive',
+      source: 'resume',
+      evidence: '事实',
+    });
+  });
+
+  it('位置对齐只取较短的一侧', () => {
+    expect(bindQuestionsToSlots([rawQuestion('a'), rawQuestion('b')], [slot({})])).toHaveLength(1);
+    expect(bindQuestionsToSlots([rawQuestion('a')], [slot({}), slot({})])).toHaveLength(1);
+  });
+
+  it('按槽位下标还原整场顺序', () => {
+    const slots: QuestionSlot[] = [
+      slot({ dimension: 'general_communication' }),
+      slot({ dimension: 'middleware_database' }),
+      slot({ dimension: 'general_communication' }),
+    ];
+    const groups = groupBlueprintSlots(slots).map((group) => ({
+      slots: group.slots,
+      questions: group.dimension === 'general_communication'
+        ? [rawQuestion('A'), rawQuestion('C')]
+        : [rawQuestion('B')],
+    }));
+
+    expect(assembleGeneratedQuestions(groups, 3).map((question) => question.question)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('数量对不上就整次失败，不截断', () => {
+    const slots = Array.from({ length: 10 }, (_, index) => slot({ topic: `topic ${index}` }));
+    const [group] = groupBlueprintSlots(slots);
+
+    expect(() => assembleGeneratedQuestions([{
+      slots: group.slots,
+      questions: Array.from({ length: 11 }, (_, index) => rawQuestion(`q${index}`)),
+    }], 10)).toThrow(/exactly 10/);
   });
 });

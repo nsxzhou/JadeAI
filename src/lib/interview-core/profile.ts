@@ -8,17 +8,23 @@
 import type { DimensionLayer, DimensionScore, RoleFamilyKey } from './types';
 import { dimensionDefinition } from './dimension';
 
+/** 分数从哪来的：模拟面试 / 面试官视角。两种玩法共用同一套坐标。 */
+export type ProfileSource = 'mock' | 'perspective';
+
 export interface ProfileInput {
   sessionId: string;
   createdAt: string | Date;
   roleFamilyKey: RoleFamilyKey | null;
   dimensionScores: DimensionScore[];
+  /** 缺省按模拟面试处理 */
+  source?: ProfileSource;
 }
 
 export interface ProfilePoint {
   sessionId: string;
   createdAt: string;
   score: number;
+  source: ProfileSource;
 }
 
 export interface ProfileDimensionSeries {
@@ -71,6 +77,7 @@ export function buildProfile(inputs: ProfileInput[]): SkillProfile {
         sessionId: input.sessionId,
         createdAt: new Date(toTimestamp(input.createdAt)).toISOString(),
         score: score.score,
+        source: input.source ?? 'mock',
       };
 
       if (score.layer === 'general') {

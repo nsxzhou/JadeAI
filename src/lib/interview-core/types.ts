@@ -84,6 +84,9 @@ export const QUESTION_COUNT_MIN = 5;
 export const QUESTION_COUNT_MAX = 30;
 export const QUESTION_COUNT_DEFAULT = 10;
 
+/** 面试官视角单个维度最多几道题（滑块上限）。 */
+export const QUESTION_COUNT_PER_DIMENSION_MAX = 5;
+
 /** 档位区间。服务端把 AI 给的分 clamp 进对应区间，维度分与总分全由服务端算。 */
 export const QUESTION_TIER_RANGES: Record<QuestionTier, { min: number; max: number }> = {
   excellent: { min: 85, max: 100 },

@@ -6,6 +6,11 @@
  * 都必须问这里——两套坐标会让画像断链。
  */
 import type { DimensionConfig, DimensionLayer, PrimaryStack, RoleFamilyKey } from './types';
+import {
+  QUESTION_COUNT_MAX,
+  QUESTION_COUNT_MIN,
+  QUESTION_COUNT_PER_DIMENSION_MAX,
+} from './types';
 
 export interface DimensionDefinition {
   key: string;
@@ -233,6 +238,108 @@ export function planQuestionCounts(params: {
 
 export function totalQuestions(counts: Record<string, number>): number {
   return Object.values(counts).reduce((sum, n) => sum + n, 0);
+}
+
+// ── 面试官视角的逐维度题数 ────────────────────
+
+/**
+ * 把一份「每维几题」的配置规整成可用的形状。
+ *
+ * 规则：
+ * - 只认配置里存在的维度 key，其余 key 一律丢弃（避免脏 key 混进题数与画像）；
+ * - 通用层恒 ≥1 题——两层坐标可比的前提就是每场都测到；
+ * - 总数落在 [QUESTION_COUNT_MIN, QUESTION_COUNT_MAX]，超出时从族层/自定义维度
+ *   的最大项递减，不足时轮流补到通用层。
+ */
+export function normalizeQuestionCounts(
+  dimensions: DimensionConfig[],
+  counts: Record<string, number> | null | undefined,
+): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const dimension of dimensions) {
+    const raw = counts?.[dimension.key];
+    const value = typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+    result[dimension.key] = dimension.layer === 'general' ? Math.max(1, value) : value;
+  }
+
+  let total = totalQuestions(result);
+
+  while (total > QUESTION_COUNT_MAX) {
+    const shrinkable = dimensions.filter(
+      (dimension) => dimension.layer !== 'general' && (result[dimension.key] ?? 0) > 0,
+    );
+    if (shrinkable.length === 0) break;
+    const target = shrinkable.reduce((max, dimension) =>
+      (result[dimension.key] > result[max.key] ? dimension : max));
+    result[target.key] -= 1;
+    total -= 1;
+  }
+
+  const general = dimensions.filter((dimension) => dimension.layer === 'general');
+  let cursor = 0;
+  while (total < QUESTION_COUNT_MIN && general.length > 0) {
+    result[general[cursor % general.length].key] += 1;
+    cursor += 1;
+    total += 1;
+  }
+
+  return result;
+}
+
+/** 逐维度题数的校验错误清单；空数组表示通过。 */
+export function validateQuestionCounts(
+  dimensions: DimensionConfig[],
+  counts: Record<string, number> | null | undefined,
+): string[] {
+  const errors: string[] = [];
+  const known = new Set(dimensions.map((dimension) => dimension.key));
+
+  for (const [key, value] of Object.entries(counts ?? {})) {
+    if (!known.has(key)) {
+      errors.push(`Unknown dimension in questionCounts: ${key}`);
+      continue;
+    }
+    if (!Number.isInteger(value) || value < 0 || value > QUESTION_COUNT_PER_DIMENSION_MAX) {
+      errors.push(
+        `Dimension "${key}" question count must be an integer in [0, ${QUESTION_COUNT_PER_DIMENSION_MAX}]; received ${value}.`,
+      );
+    }
+  }
+
+  for (const dimension of dimensions) {
+    const value = counts?.[dimension.key] ?? 0;
+    if (dimension.layer === 'general' && value < 1) {
+      errors.push(`General dimension "${dimension.key}" requires at least 1 question.`);
+    }
+  }
+
+  const total = totalQuestions(
+    Object.fromEntries(dimensions.map((dimension) => [dimension.key, counts?.[dimension.key] ?? 0])),
+  );
+  if (total < QUESTION_COUNT_MIN || total > QUESTION_COUNT_MAX) {
+    errors.push(`Total question count must be in [${QUESTION_COUNT_MIN}, ${QUESTION_COUNT_MAX}]; received ${total}.`);
+  }
+
+  return errors;
+}
+
+/** 自定义维度必须自带考察重点——没有它，出题 prompt 里这一路就是空的。 */
+export function validateJobDimensions(dimensions: DimensionConfig[]): string[] {
+  const errors: string[] = [];
+  const keys = new Set<string>();
+
+  for (const dimension of dimensions) {
+    if (keys.has(dimension.key)) errors.push(`Duplicate dimension key: ${dimension.key}`);
+    keys.add(dimension.key);
+
+    if (!dimension.key.trim()) errors.push('Dimension key must not be empty.');
+    if (dimension.custom && !(dimension.description ?? '').trim()) {
+      errors.push(`Custom dimension "${dimension.label || dimension.key}" requires a description.`);
+    }
+  }
+
+  if (dimensions.length === 0) errors.push('At least one dimension is required.');
+  return errors;
 }
 
 /**

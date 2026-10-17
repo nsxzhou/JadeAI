@@ -24,18 +24,35 @@ export function planRetryQuestions(
 }
 
 /** 错题本里的一条：题目本体 + 历次回答。 */
+export type WeakQuestionSource = 'mock' | 'perspective';
+
+export interface WeakQuestionAttempt {
+  /** 面试官视角的题目没有会话 id */
+  sessionId: string | null;
+  answer: string;
+  score: number | null;
+  createdAt: string;
+  source: WeakQuestionSource;
+}
+
 export interface WeakQuestionEntry {
   /** 这一组的根题目 id（重练链的起点），用作列表 key 与重练依据 */
   rootId: string;
   question: InterviewQuestion;
-  sessionId: string;
+  sessionId: string | null;
+  /** 最近一次回答来自哪种玩法 */
+  source: WeakQuestionSource;
+  /** 这道题出自哪个目标岗位的简历分析，空表示来自模拟面试 */
+  jobTitle: string;
   /** 按时间升序的历次回答（含重练） */
-  attempts: Array<{ sessionId: string; answer: string; score: number | null; createdAt: string }>;
+  attempts: WeakQuestionAttempt[];
 }
 
 export interface WeakQuestionRow {
   question: InterviewQuestion;
-  sessionId: string;
+  sessionId: string | null;
+  jobTitle?: string;
+  source?: WeakQuestionSource;
   createdAt: string;
 }
 
@@ -54,11 +71,12 @@ export function groupWeakQuestions(rows: WeakQuestionRow[]): WeakQuestionEntry[]
     if (!rootId) continue;
 
     const existing = byRoot.get(rootId);
-    const attempt = {
+    const attempt: WeakQuestionAttempt = {
       sessionId: row.sessionId,
       answer: row.question.answer ?? '',
       score: typeof row.question.score === 'number' ? row.question.score : null,
       createdAt: row.createdAt,
+      source: row.source ?? 'mock',
     };
 
     if (existing) {
@@ -67,12 +85,16 @@ export function groupWeakQuestions(rows: WeakQuestionRow[]): WeakQuestionEntry[]
       if (attempt.createdAt >= existing.attempts[existing.attempts.length - 1].createdAt) {
         existing.question = row.question;
         existing.sessionId = row.sessionId;
+        existing.source = attempt.source;
+        existing.jobTitle = row.jobTitle ?? existing.jobTitle;
       }
     } else {
       byRoot.set(rootId, {
         rootId,
         question: row.question,
         sessionId: row.sessionId,
+        source: attempt.source,
+        jobTitle: row.jobTitle ?? '',
         attempts: [attempt],
       });
     }

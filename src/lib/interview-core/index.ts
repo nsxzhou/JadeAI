@@ -12,6 +12,7 @@ export * from './blueprint';
 export * from './profile';
 export * from './weak-questions';
 export * from './legacy-questions';
+export * from './perspective-legacy';
 export * from './turn';
 export * from './timing';
 export * from './reversal';

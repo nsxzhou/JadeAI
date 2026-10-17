@@ -1,8 +1,8 @@
 /**
- * 旧 JSON 题目 → `interview_questions` 行的映射。
+ * 题目对象 ↔ `interview_questions` 行的映射。
  *
- * 翻转之前，面试官视角的题目存在 `perspective_candidates.questions` JSON 列里。
- * 题目升格为实体后要迁成行；这里只做「字段无损」的纯映射，落库与幂等由执行器负责。
+ * 两个模式的题目都落这一张表，字段名差异（`dimension` → `dimension_key`）与
+ * 方言差异（布尔/JSON 表示）在这里吸收。
  */
 import type { FollowUp, InterviewQuestion, QuestionDifficulty, QuestionStatus, InterviewQuestionSource } from './types';
 
@@ -132,14 +132,6 @@ export function questionToRow(
     status: status && STATUSES.has(status) ? status : 'pending',
     originQuestionId: optionalStr(record.originQuestionId),
   };
-}
-
-/** JSON 列里的题目数组 → 行。`raw` 可能是 null / 非数组，一律当作空。 */
-export function legacyQuestionsToRows(raw: unknown, perspectiveCandidateId: string): InterviewQuestionRow[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((question, index) =>
-    questionToRow(question, { perspectiveCandidateId }, index),
-  );
 }
 
 /** 行 → 领域题目。两边方言的布尔/JSON 表示差异在这里收敛。 */

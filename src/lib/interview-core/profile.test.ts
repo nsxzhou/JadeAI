@@ -132,3 +132,34 @@ describe('groupWeakQuestions', () => {
     ])).toEqual([]);
   });
 });
+
+describe('两个模式共用一套坐标', () => {
+  const score = (key: string, value: number) => ({
+    key,
+    label: key,
+    layer: 'general' as const,
+    score: value,
+    weight: 1,
+  });
+
+  it('模拟面试与面试官视角的点落在同一条线上，并各自带来源', () => {
+    const profile = buildProfile([
+      { sessionId: 'mock-1', createdAt: '2026-01-01', roleFamilyKey: 'backend', dimensionScores: [score('general_logic', 60)], source: 'mock' },
+      { sessionId: 'persp-1', createdAt: '2026-02-01', roleFamilyKey: 'backend', dimensionScores: [score('general_logic', 75)], source: 'perspective' },
+    ]);
+
+    const series = profile.general.find((item) => item.key === 'general_logic');
+    expect(series?.points.map((point) => point.source)).toEqual(['mock', 'perspective']);
+    expect(series?.delta).toBe(15);
+    expect(profile.sessionCount).toBe(2);
+  });
+
+  it('面试官视角的自定义维度不进画像', () => {
+    const profile = buildProfile([
+      { sessionId: 'persp-1', createdAt: '2026-02-01', roleFamilyKey: 'other', dimensionScores: [score('产品 sense', 90)], source: 'perspective' },
+    ]);
+    expect(profile.general).toHaveLength(0);
+    expect(profile.family).toHaveLength(0);
+    expect(profile.sessionCount).toBe(0);
+  });
+});

@@ -77,8 +77,8 @@ export const ROLE_FAMILIES: Record<RoleFamilyKey, RoleFamilyDefinition> = {
       'candidate_questions',
     ],
   },
-  // 兜底：不限制题型，但评分坐标只有通用层 4 条。
-  // 过渡期容许旧目录的题型（阶段 3/5 完成重键后才收紧）。
+  // 兜底：不限制题型，但评分坐标只有通用层 4 维。
+  // 题型（category）与评分坐标（dimension）是两件事，这里放行的是「怎么问」，不是「算什么分」。
   other: {
     key: 'other',
     requiredTopics: [],
