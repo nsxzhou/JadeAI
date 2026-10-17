@@ -7,21 +7,26 @@ import { buildDimensionQuestionsPrompt, buildInterviewBlueprintPrompt } from '@/
 import {
   assembleGeneratedQuestions,
   canonicalizeBlueprintEvidence,
-  detectGoRole,
   groupBlueprintSlots,
   validateBlueprint,
-} from '@/lib/ai/perspective-blueprint';
+} from '@/lib/interview-core/blueprint';
+import { totalQuestions } from '@/lib/interview-core/dimension';
+import { ROLE_FAMILIES } from '@/lib/interview-core/role-family';
+import { sessionDimensions } from '@/lib/interview/session-dimensions';
 import { perspectiveRepository } from '@/lib/db/repositories/perspective.repository';
 import { requireOwnedCandidate } from '@/lib/perspective/access';
-import {
-  interviewDimensions,
-  QUESTION_DIMENSION_DESCRIPTIONS,
-  QUESTION_DIMENSION_LABELS,
-} from '@/lib/perspective/dimensions';
+import { normalizeJobCoordinates } from '@/lib/perspective/job-coordinates';
 import type { DimensionConfig, InterviewQuestion } from '@/types/perspective';
 
 export const maxDuration = 300;
 
+/**
+ * 按两层坐标出题。
+ *
+ * 评分坐标（dimension）来自内核目录 + 该岗位的自定义维度，题数来自 `questionCounts`；
+ * 题型（category）由岗位族决定。两者解耦：一道系统场景题可以计入逻辑思维，
+ * 一道求职动机题也可以计入沟通表达。
+ */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
@@ -37,19 +42,33 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    const configuredDimensions = job.dimensions as DimensionConfig[];
-    const isGoRole = detectGoRole(job.title, job.jobDescription);
-    const dimensions = interviewDimensions(
-      configuredDimensions,
-      isGoRole,
-      (key) => QUESTION_DIMENSION_DESCRIPTIONS[key as keyof typeof QUESTION_DIMENSION_DESCRIPTIONS] ?? key,
-      (key) => QUESTION_DIMENSION_LABELS[key as keyof typeof QUESTION_DIMENSION_LABELS] ?? key,
-    );
-    const questionCount = dimensions.reduce((sum, dimension) => sum + dimension.weight, 0);
+    const body = await request.json().catch(() => ({}));
+    const locale = typeof body?.locale === 'string' ? body.locale : 'zh';
 
-    if (!dimensions?.length) {
+    const coordinates = normalizeJobCoordinates(job);
+    const canonDimensions = await sessionDimensions(
+      locale,
+      coordinates.roleFamilyKey,
+      coordinates.primaryStack,
+    );
+    // 自定义维度只参与本场评分与报告，不进能力画像（key 不在目录里）。
+    const customDimensions = coordinates.dimensions.filter((dimension) => dimension.custom);
+    const dimensions: DimensionConfig[] = [...canonDimensions, ...customDimensions];
+    const questionCounts = coordinates.questionCounts;
+    const questionCount = totalQuestions(questionCounts);
+
+    if (dimensions.length === 0 || questionCount === 0) {
       return NextResponse.json({ error: 'No dimensions configured' }, { status: 400 });
     }
+
+    const family = ROLE_FAMILIES[coordinates.roleFamilyKey];
+    const requiredCategoryMinimums = questionCount >= 8
+      ? [
+        ...family.requiredCategories.map((category) => ({ category, min: 1 })),
+        // 求职动机没有独立评分坐标，但题型保留：动机题的分落到它槽位的维度上。
+        { category: 'hr_motivation' as const, min: 1 },
+      ]
+      : [];
 
     const aiConfig = extractAIConfig(request);
     const model = getModel(aiConfig);
@@ -60,6 +79,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       resumeText: candidate.resumeText,
       dimensions,
       questionCount,
+      questionCounts,
+      roleFamilyKey: coordinates.roleFamilyKey,
+      allowedCategories: family.allowedCategories,
+      requiredCategoryMinimums,
     });
     const blueprintResult = await generateText({
       model,
@@ -68,19 +91,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       prompt: blueprintPrompt.prompt,
       providerOptions: getJsonProviderOptions(aiConfig),
     });
-    const extractedBlueprint = canonicalizeBlueprintEvidence(
-      extractJson(blueprintResult.text, interviewBlueprintOutputSchema),
-    );
+
+    // 维度与题型各自独立：不再把 dimension 强行改成 category。
     const blueprint = validateBlueprint(
-      {
-        ...extractedBlueprint,
-        // 题型就是评分维度；模型返回的第二套 dimension 不再作为独立分类使用。
-        slots: extractedBlueprint.slots.map((slot) => ({ ...slot, dimension: slot.category })),
-      },
+      canonicalizeBlueprintEvidence(
+        extractJson(blueprintResult.text, interviewBlueprintOutputSchema),
+      ),
       {
         questionCount,
         dimensions,
-        isGoRole,
+        questionCounts,
+        roleFamily: coordinates.roleFamilyKey,
+        primaryStack: coordinates.primaryStack,
         enforceJdCoverage: true,
       },
     );
@@ -134,21 +156,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     );
 
     // id 由服务端生成——模型返回的 id 可能重复或缺失，而后面的评估要靠它对齐题目。
-    const questions: InterviewQuestion[] = raw.map((q) => ({
+    const questions: InterviewQuestion[] = raw.map((question) => ({
       id: crypto.randomUUID(),
-      dimension: q.dimension,
-      category: q.category,
-      source: q.source,
-      evidence: q.evidence,
-      question: q.question,
-      intent: q.intent,
-      rubric: q.rubric,
-      followUps: q.followUps,
-      referencePoints: q.referencePoints,
-      redFlags: q.redFlags,
-      referenceAnswer: q.referenceAnswer,
-      estimatedMinutes: q.estimatedMinutes,
-      difficulty: q.difficulty,
+      dimension: question.dimension,
+      category: question.category,
+      source: question.source,
+      evidence: question.evidence,
+      question: question.question,
+      intent: question.intent,
+      rubric: question.rubric,
+      followUps: question.followUps,
+      referencePoints: question.referencePoints,
+      redFlags: question.redFlags,
+      referenceAnswer: question.referenceAnswer,
+      estimatedMinutes: question.estimatedMinutes,
+      difficulty: question.difficulty,
       status: 'pending',
     }));
 

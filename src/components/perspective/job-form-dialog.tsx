@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
@@ -15,14 +15,53 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { DimensionChips } from './dimension-chips';
-import { interviewDimensions } from '@/lib/perspective/dimensions';
-import { detectGoRole } from '@/lib/ai/perspective-blueprint';
+import {
+  jobDimensions,
+  normalizeJobCoordinates,
+  presetDimensionKeys,
+} from '@/lib/perspective/job-coordinates';
+import { normalizePrimaryStack, normalizeRoleFamily } from '@/lib/interview-core/role-family';
+import { normalizeQuestionCounts } from '@/lib/interview-core/dimension';
 import { useFingerprint } from '@/hooks/use-fingerprint';
 import { getAIHeaders } from '@/stores/settings-store';
+import { cn } from '@/lib/utils';
 import {
+  QUESTION_COUNT_MAX,
+  QUESTION_COUNT_MIN,
   type DimensionConfig,
   type RecruitJob,
 } from '@/types/perspective';
+import type { PrimaryStack, RoleFamilyKey } from '@/lib/interview-core/types';
+
+const ROLE_FAMILIES: RoleFamilyKey[] = ['backend', 'frontend', 'data_algo', 'qa_infra', 'other'];
+const PRIMARY_STACKS: PrimaryStack[] = ['go', 'java', 'python', 'node', 'none'];
+
+function ChoiceRow<T extends string>({ options, value, onChange, labelOf }: {
+  options: readonly T[];
+  value: T;
+  onChange: (next: T) => void;
+  labelOf: (option: T) => string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => onChange(option)}
+          className={cn(
+            'cursor-pointer rounded-lg border px-3 py-1.5 text-xs transition-colors',
+            value === option
+              ? 'border-brand bg-brand/10 font-medium text-brand'
+              : 'border-zinc-200 text-zinc-600 hover:border-zinc-300 dark:border-zinc-700 dark:text-zinc-300',
+          )}
+        >
+          {labelOf(option)}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 interface JobFormDialogProps {
   open: boolean;
@@ -39,26 +78,67 @@ export function JobFormDialog({ open, onOpenChange, job, onSaved }: JobFormDialo
 
   const [title, setTitle] = useState('');
   const [jobDescription, setJobDescription] = useState('');
+  const [roleFamilyKey, setRoleFamilyKey] = useState<RoleFamilyKey>('other');
+  const [primaryStack, setPrimaryStack] = useState<PrimaryStack>('none');
   const [dimensions, setDimensions] = useState<DimensionConfig[]>([]);
+  const [questionCounts, setQuestionCounts] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
+
+  const labelOf = useCallback((key: string) => tDim(key), [tDim]);
+  const describeOf = useCallback((key: string) => tDim(`descriptions.${key}`), [tDim]);
 
   // 每次打开都重置成当前岗位的值——不这么做的话，编辑完 A 再打开 B 会看到 A 的内容。
   useEffect(() => {
     if (!open) return;
     setTitle(job?.title ?? '');
     setJobDescription(job?.jobDescription ?? '');
-    const describe = (key: string) => tDim(`descriptions.${key}`);
-    setDimensions(interviewDimensions(
-      job?.dimensions ?? [],
-      detectGoRole(job?.title ?? '', job?.jobDescription ?? ''),
-      (key) => tDim(key),
-      describe,
-    ));
-  }, [open, job, tDim]);
 
-  const canSave = title.trim() && jobDescription.trim() && dimensions.length > 0 && !saving;
-  const questionCount = dimensions.reduce((sum, dimension) => sum + dimension.weight, 0);
+    // 老岗位没有显式坐标，`normalizeJobCoordinates` 会按旧目录推导（岗位族、题数都在里面）。
+    const coordinates = job
+      ? normalizeJobCoordinates(job)
+      : { roleFamilyKey: 'other' as RoleFamilyKey, primaryStack: 'none' as PrimaryStack, dimensions: [], questionCounts: {} };
+
+    setRoleFamilyKey(coordinates.roleFamilyKey);
+    setPrimaryStack(coordinates.primaryStack);
+
+    const nextDimensions = jobDimensions({
+      roleFamilyKey: coordinates.roleFamilyKey,
+      primaryStack: coordinates.primaryStack,
+      previous: coordinates.dimensions,
+      labelOf,
+      describeOf,
+    });
+    setDimensions(nextDimensions);
+    setQuestionCounts(normalizeQuestionCounts(nextDimensions, coordinates.questionCounts));
+  }, [open, job, labelOf, describeOf]);
+
+  const total = useMemo(
+    () => dimensions.reduce((sum, dimension) => sum + (questionCounts[dimension.key] ?? 0), 0),
+    [dimensions, questionCounts],
+  );
+  const presetKeys = presetDimensionKeys(roleFamilyKey, primaryStack);
+  const totalValid = total >= QUESTION_COUNT_MIN && total <= QUESTION_COUNT_MAX;
+  const canSave = Boolean(title.trim() && jobDescription.trim() && dimensions.length > 0 && totalValid && !saving);
+
+  /** 换岗位族：族层维度换一批，通用层与自定义维度、用户改过的文案都保留。 */
+  function changeCoordinates(next: { roleFamilyKey?: RoleFamilyKey; primaryStack?: PrimaryStack }) {
+    const nextFamily = next.roleFamilyKey ?? roleFamilyKey;
+    const nextStack = next.primaryStack ?? primaryStack;
+    setRoleFamilyKey(nextFamily);
+    setPrimaryStack(nextStack);
+
+    const nextDimensions = jobDimensions({
+      roleFamilyKey: nextFamily,
+      primaryStack: nextStack,
+      previous: dimensions,
+      custom: dimensions.filter((dimension) => dimension.custom),
+      labelOf,
+      describeOf,
+    });
+    setDimensions(nextDimensions);
+    setQuestionCounts(normalizeQuestionCounts(nextDimensions, questionCounts));
+  }
 
   async function recognizeDimensions() {
     if (!title.trim() || !jobDescription.trim()) {
@@ -74,7 +154,12 @@ export function JobFormDialog({ open, onOpenChange, job, onSaved }: JobFormDialo
       });
       if (!response.ok) throw new Error('suggest failed');
       const data = await response.json();
+      const nextFamily = normalizeRoleFamily(data.roleFamilyKey);
+      const nextStack = normalizePrimaryStack(data.primaryStack);
+      setRoleFamilyKey(nextFamily);
+      setPrimaryStack(nextStack);
       setDimensions(data.dimensions);
+      setQuestionCounts(normalizeQuestionCounts(data.dimensions, data.questionCounts));
       toast.success(t('dimensions.recognizeSuccess'));
     } catch {
       toast.error(t('dimensions.recognizeFailed'));
@@ -93,7 +178,14 @@ export function JobFormDialog({ open, onOpenChange, job, onSaved }: JobFormDialo
           'content-type': 'application/json',
           ...(fingerprint ? { 'x-fingerprint': fingerprint } : {}),
         },
-        body: JSON.stringify({ title, jobDescription, dimensions, questionCount }),
+        body: JSON.stringify({
+          title,
+          jobDescription,
+          roleFamilyKey,
+          primaryStack,
+          dimensions,
+          questionCounts,
+        }),
       });
       if (!res.ok) throw new Error('save failed');
       const data = await res.json();
@@ -144,12 +236,45 @@ export function JobFormDialog({ open, onOpenChange, job, onSaved }: JobFormDialo
             />
           </div>
 
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <div className="mb-2 text-sm font-medium">{t('roleFamilyLabel')}</div>
+              <ChoiceRow
+                options={ROLE_FAMILIES}
+                value={roleFamilyKey}
+                onChange={(next) => changeCoordinates({ roleFamilyKey: next })}
+                labelOf={(key) => t(`roleFamilies.${key}`)}
+              />
+            </div>
+            <div>
+              <div className="mb-2 text-sm font-medium">{t('primaryStackLabel')}</div>
+              <ChoiceRow
+                options={PRIMARY_STACKS}
+                value={primaryStack}
+                onChange={(next) => changeCoordinates({ primaryStack: next })}
+                labelOf={(key) => t(`primaryStacks.${key}`)}
+              />
+            </div>
+          </div>
+          <p className="-mt-2 text-xs text-zinc-500">{t('roleFamilyHint')}</p>
+
           <DimensionChips
             value={dimensions}
-            onChange={setDimensions}
+            questionCounts={questionCounts}
+            onChange={(nextDimensions, nextCounts) => {
+              setDimensions(nextDimensions);
+              setQuestionCounts(nextCounts);
+            }}
+            presetKeys={presetKeys}
             onAIRecognize={() => void recognizeDimensions()}
             aiRecognizing={recognizing}
           />
+
+          {!totalValid && dimensions.length > 0 && (
+            <p className="text-xs text-red-500">
+              {t('questionCountRange', { min: QUESTION_COUNT_MIN, max: QUESTION_COUNT_MAX })}
+            </p>
+          )}
         </div>
 
         <DialogFooter className="shrink-0">

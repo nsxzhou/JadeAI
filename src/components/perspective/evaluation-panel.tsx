@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Sparkles, Loader2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
@@ -41,6 +41,8 @@ const RECOMMENDATION_STYLE: Record<Recommendation, string> = {
 interface EvaluationPanelProps {
   candidate: RecruitCandidate;
   evaluation: RecruitEvaluation | null;
+  /** none = 没跑过；partial = 逐题段跑到一半；complete = 汇总已落定 */
+  evaluationStatus?: 'none' | 'partial' | 'complete';
   onCandidateUpdated: (candidate: RecruitCandidate) => void;
   onEvaluated: (evaluation: RecruitEvaluation) => void;
 }
@@ -48,6 +50,7 @@ interface EvaluationPanelProps {
 export function EvaluationPanel({
   candidate,
   evaluation,
+  evaluationStatus = 'none',
   onCandidateUpdated,
   onEvaluated,
 }: EvaluationPanelProps) {
@@ -57,16 +60,48 @@ export function EvaluationPanel({
   const [transcript, setTranscript] = useState(candidate.transcript);
   const [generating, setGenerating] = useState(false);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
+  /** 分块评估的进度；中断后保留，用来显示「已评 5/11」与继续按钮 */
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
+    evaluationStatus === 'partial' ? { done: 0, total: 0 } : null,
+  );
   // 已有报告时记录默认折叠，把版面让给报告
   const [transcriptOpen, setTranscriptOpen] = useState(!evaluation);
+
+  // 从断点回来的页面：进度只在库里，进页面先问一次「已评几题」。
+  useEffect(() => {
+    if (evaluationStatus !== 'partial' || !candidate.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/perspective/candidates/${candidate.id}/evaluation`, {
+          headers: fingerprint ? { 'x-fingerprint': fingerprint } : {},
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setProgress({ done: data.evaluated ?? 0, total: data.total ?? 0 });
+      } catch {
+        // 拉不到就保持「已中断」提示，继续按钮仍可用
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [evaluationStatus, candidate.id, fingerprint]);
 
   const hasQuestions = (candidate.questions ?? []).length > 0;
   const answeredCount = evaluation?.questionEvaluations.filter((q) => q.answered).length ?? 0;
   // 逐题记录过多少题——决定粘贴框上方那句提示说什么
   const recordedCount = countAnswered((candidate.questions as InterviewQuestion[] | null) ?? []);
 
-  async function doGenerate() {
+  /**
+   * 分块两段式：一次调用只评一块，循环到汇总完成。
+   *
+   * 中途失败不丢已评的题——进度留在库里，点「继续生成」从断点接着跑。
+   */
+  async function doGenerate(restart = false) {
     setGenerating(true);
+    if (restart) setProgress(null);
     try {
       // 先存记录再评价：接口从库里读 transcript，不从请求体读。
       const saveRes = await fetch(`/api/perspective/candidates/${candidate.id}`, {
@@ -80,17 +115,39 @@ export function EvaluationPanel({
       if (!saveRes.ok) throw new Error('save failed');
       onCandidateUpdated((await saveRes.json()).candidate);
 
-      const res = await fetch(`/api/perspective/candidates/${candidate.id}/evaluation`, {
-        method: 'POST',
-        headers: {
-          ...(fingerprint ? { 'x-fingerprint': fingerprint } : {}),
-          ...getAIHeaders(),
-        },
-      });
-      if (!res.ok) throw new Error('evaluate failed');
-      const data = await res.json();
-      onEvaluated(data.evaluation);
-      setTranscriptOpen(false);
+      let restarting = restart;
+      // 一次最多推 ceil(total/5)+2 块，防止接口异常时死循环。
+      for (let guard = 0; guard < 40; guard += 1) {
+        const res = await fetch(`/api/perspective/candidates/${candidate.id}/evaluation`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...(fingerprint ? { 'x-fingerprint': fingerprint } : {}),
+            ...getAIHeaders(),
+          },
+          body: JSON.stringify({ restart: restarting }),
+        });
+        restarting = false;
+        const data = await res.json().catch(() => ({}));
+
+        if (data.status === 'complete' && data.evaluation) {
+          onEvaluated(data.evaluation);
+          setProgress(null);
+          setTranscriptOpen(false);
+          return;
+        }
+        if (!res.ok || data.error) {
+          setProgress({ done: data.evaluated ?? 0, total: data.total ?? 0 });
+          toast.error(t('errors.generateFailed'));
+          return;
+        }
+        setProgress({ done: data.evaluated ?? 0, total: data.total ?? 0 });
+        if (!data.remaining) {
+          // 全部题目已评完但仍未汇总：再调一次就走汇总段。
+          continue;
+        }
+      }
+      toast.error(t('errors.generateFailed'));
     } catch {
       toast.error(t('errors.generateFailed'));
     } finally {
@@ -100,7 +157,7 @@ export function EvaluationPanel({
 
   function handleGenerate() {
     if (evaluation) setRegenerateOpen(true);
-    else doGenerate();
+    else void doGenerate(progress ? false : true);
   }
 
   if (!hasQuestions) {
@@ -171,11 +228,34 @@ export function EvaluationPanel({
       {generating && (
         <div className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-zinc-200 py-16 dark:border-zinc-700">
           <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
-          <p className="text-sm text-zinc-500">{t('evaluation.generating')}</p>
+          <p className="text-sm text-zinc-500">
+            {progress && progress.total > 0
+              ? `${t('evaluation.progress', { done: progress.done, total: progress.total })} · ${t('evaluation.continuing')}`
+              : t('evaluation.generating')}
+          </p>
         </div>
       )}
 
-      {!generating && !evaluation && (
+      {!generating && !evaluation && progress && (
+        <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <p>{t('evaluation.partialHint')}</p>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs">
+              {progress.total > 0 ? t('evaluation.progress', { done: progress.done, total: progress.total }) : ''}
+            </span>
+            <Button
+              size="sm"
+              onClick={() => void doGenerate(false)}
+              className="cursor-pointer gap-1.5 bg-brand hover:bg-brand-hover"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {t('evaluation.continue')}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!generating && !evaluation && !progress && (
         <div className="rounded-xl border-2 border-dashed border-zinc-200 py-16 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
           {t('evaluation.empty')}
         </div>
@@ -311,7 +391,7 @@ export function EvaluationPanel({
           <AlertDialogFooter>
             <AlertDialogCancel className="cursor-pointer">{tc('cancel')}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={doGenerate}
+              onClick={() => void doGenerate(true)}
               className="cursor-pointer bg-brand hover:bg-brand-hover"
             >
               {tc('confirm')}

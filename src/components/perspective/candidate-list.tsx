@@ -59,6 +59,7 @@ import type { CandidateSummary, DimensionConfig, RecruitJob } from '@/types/pers
 
 export function CandidateList({ jobId }: { jobId: string }) {
   const t = useTranslations('perspective');
+  const tDim = useTranslations('perspective.dimensions');
   const tc = useTranslations('common');
   const router = useRouter();
   const { fingerprint, isLoading: fpLoading } = useFingerprint();
@@ -190,7 +191,7 @@ export function CandidateList({ jobId }: { jobId: string }) {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-7xl space-y-4 px-4 py-8">
+      <div className="mx-auto max-w-7xl space-y-4">
         <Skeleton className="h-28 rounded-xl" />
         <Skeleton className="h-64 rounded-xl" />
       </div>
@@ -198,13 +199,15 @@ export function CandidateList({ jobId }: { jobId: string }) {
   }
   if (!job) return null;
 
-  const dimensions = job.dimensions as DimensionConfig[];
+  // 维度文案只在 messages 里：老岗位存的是旧 key 或原始 key，读回来要重新贴标签。
+  const dimensions = (job.dimensions as DimensionConfig[]).map((dimension) =>
+    (dimension.custom ? dimension : { ...dimension, label: tDim(dimension.key) }));
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5 px-4 py-8">
+    <div className="mx-auto max-w-7xl space-y-5">
       <div>
         <Link
-          href="/recruit"
+          href="/interview/perspective"
           className="inline-flex cursor-pointer items-center text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
         >
           <ChevronLeft className="h-3.5 w-3.5" />

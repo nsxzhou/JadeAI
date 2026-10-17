@@ -9,10 +9,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if ('error' in access) return access.error;
 
   const evaluation = await perspectiveRepository.findEvaluation(id);
+  // partial = 逐题段还没跑完：报告页要显示进度并从断点继续，不能当成已有报告。
   return NextResponse.json({
     candidate: access.candidate,
     job: access.job,
     evaluation,
+    evaluationStatus: evaluation?.status ?? 'none',
   });
 }
 

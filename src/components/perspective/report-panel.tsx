@@ -17,6 +17,7 @@ export function ReportPanel({ jobId, candidateId }: { jobId: string; candidateId
 
   const [candidate, setCandidate] = useState<RecruitCandidate | null>(null);
   const [evaluation, setEvaluation] = useState<RecruitEvaluation | null>(null);
+  const [evaluationStatus, setEvaluationStatus] = useState<'none' | 'partial' | 'complete'>('none');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,7 +32,9 @@ export function ReportPanel({ jobId, candidateId }: { jobId: string; candidateId
         const data = await res.json();
         if (cancelled) return;
         setCandidate(data.candidate);
-        setEvaluation(data.evaluation);
+        // 分块评估的中间态不能当报告显示：它有单题结论，但没有汇总。
+        setEvaluationStatus(data.evaluationStatus ?? 'none');
+        setEvaluation(data.evaluationStatus === 'complete' ? data.evaluation : null);
       } catch {
         if (!cancelled) toast.error(t('errors.loadFailed'));
       } finally {
@@ -45,7 +48,7 @@ export function ReportPanel({ jobId, candidateId }: { jobId: string; candidateId
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-5xl space-y-4 px-4 py-8">
+      <div className="mx-auto max-w-5xl space-y-4">
         <Skeleton className="h-32 rounded-xl" />
         <Skeleton className="h-64 rounded-xl" />
       </div>
@@ -54,7 +57,7 @@ export function ReportPanel({ jobId, candidateId }: { jobId: string; candidateId
   if (!candidate) return null;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
+    <div className="mx-auto max-w-5xl">
       <div className="mb-4 flex items-end justify-between gap-3">
         <div className="min-w-0">
           <Link
@@ -85,8 +88,12 @@ export function ReportPanel({ jobId, candidateId }: { jobId: string; candidateId
       <EvaluationPanel
         candidate={candidate}
         evaluation={evaluation}
+        evaluationStatus={evaluationStatus}
         onCandidateUpdated={setCandidate}
-        onEvaluated={setEvaluation}
+        onEvaluated={(next) => {
+          setEvaluation(next);
+          setEvaluationStatus('complete');
+        }}
       />
     </div>
   );

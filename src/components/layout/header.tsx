@@ -23,6 +23,12 @@ export function Header() {
   const t = useTranslations();
   const pathname = usePathname();
 
+  // 最长前缀胜出：/interview/perspective 会同时命中 /interview 和
+  // /interview/perspective，不这样做导航里会有两项同时高亮。
+  const activeHref = NAV_ITEMS.filter((item) => pathname.startsWith(item.match)).sort(
+    (a, b) => b.match.length - a.match.length
+  )[0]?.href;
+
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:bg-background/95 dark:supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
@@ -32,7 +38,7 @@ export function Header() {
           </Link>
           <nav className="hidden md:flex items-center gap-1">
             {NAV_ITEMS.map((item) => {
-              const isActive = pathname.startsWith(item.match);
+              const isActive = item.href === activeHref;
               return (
                 <Link
                   key={item.href}
@@ -77,7 +83,7 @@ export function Header() {
               <SheetContent side="right" className="w-64">
                 <nav className="flex flex-col gap-2 pt-8">
                   {NAV_ITEMS.map((item) => {
-                    const isActive = pathname.startsWith(item.match);
+                    const isActive = item.href === activeHref;
                     return (
                       <Link
                         key={item.href}

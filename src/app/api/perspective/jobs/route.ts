@@ -3,6 +3,7 @@ import { perspectiveRepository } from '@/lib/db/repositories/perspective.reposit
 import { createJobInputSchema } from '@/lib/ai/perspective-schema';
 import { requireUser } from '@/lib/perspective/access';
 import { aggregateJobStats } from '@/lib/perspective/job-stats';
+import { totalQuestions, validateJobDimensions, validateQuestionCounts } from '@/lib/interview-core/dimension';
 
 export async function GET(request: NextRequest) {
   const auth = await requireUser(request);
@@ -29,9 +30,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const { dimensions, questionCounts } = parsed.data;
+  const errors = [
+    ...validateJobDimensions(dimensions),
+    ...validateQuestionCounts(dimensions, questionCounts),
+  ];
+  if (errors.length > 0) {
+    return NextResponse.json({ error: 'Invalid input', details: errors }, { status: 400 });
+  }
+
   const job = await perspectiveRepository.createJob({
     userId: auth.user.id,
     ...parsed.data,
+    // 总题数是派生值：逐维度题数才是权威。
+    questionCount: totalQuestions(questionCounts),
   });
   return NextResponse.json({ job }, { status: 201 });
 }
