@@ -36,8 +36,7 @@ export const perspectiveCandidates = sqliteTable('perspective_candidates', {
     .default('pending'),
   resumeText: text('resume_text').notNull().default(''),
   resumeData: text('resume_data', { mode: 'json' }),
-  /** 阶段 5 起题目落 interview_questions，读取逐步停止依赖这一列，最后 DROP */
-  questions: text('questions', { mode: 'json' }),
+  /** 题目已全部升格到 interview_questions；这一列在本次发布中 DROP。 */
   transcript: text('transcript').notNull().default(''),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
@@ -59,5 +58,7 @@ export const perspectiveEvaluations = sqliteTable('perspective_evaluations', {
   strengths: text('strengths', { mode: 'json' }).notNull().default('[]'),
   concerns: text('concerns', { mode: 'json' }).notNull().default('[]'),
   overallComment: text('overall_comment').notNull().default(''),
+  /** partial = 逐题段还在跑；complete = 汇总段已落定 */
+  status: text('status', { enum: ['partial', 'complete'] }).notNull().default('complete'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });

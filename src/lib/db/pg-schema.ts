@@ -3,7 +3,7 @@
  * Used ONLY by drizzle-kit for PG migration generation.
  * Runtime code still imports table objects from schema.ts.
  */
-import { pgTable, text, integer } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 const epochNow = sql`extract(epoch from now())::integer`;
@@ -191,7 +191,6 @@ export const perspectiveCandidates = pgTable('perspective_candidates', {
   status: text('status').notNull().default('pending'),
   resumeText: text('resume_text').notNull().default(''),
   resumeData: text('resume_data'),
-  questions: text('questions'),
   transcript: text('transcript').notNull().default(''),
   createdAt: integer('created_at').notNull().default(epochNow),
   updatedAt: integer('updated_at').notNull().default(epochNow),
@@ -208,6 +207,8 @@ export const perspectiveEvaluations = pgTable('perspective_evaluations', {
   strengths: text('strengths').notNull().default('[]'),
   concerns: text('concerns').notNull().default('[]'),
   overallComment: text('overall_comment').notNull().default(''),
+  /** partial = 逐题段还在跑；complete = 汇总段已落定 */
+  status: text('status').notNull().default('complete'),
   createdAt: integer('created_at').notNull().default(epochNow),
 });
 
@@ -239,4 +240,10 @@ export const interviewQuestions = pgTable('interview_questions', {
   originQuestionId: text('origin_question_id'),
   createdAt: integer('created_at').notNull().default(epochNow),
   updatedAt: integer('updated_at').notNull().default(epochNow),
-});
+}, (table) => [
+  // 题目要么属于模拟面试的一轮，要么属于面试官视角的一份简历分析，不能两边都不属于。
+  check(
+    'interview_questions_owner_check',
+    sql`(${table.roundId} IS NULL) <> (${table.perspectiveCandidateId} IS NULL)`,
+  ),
+]);

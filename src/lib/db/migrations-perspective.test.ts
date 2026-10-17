@@ -37,6 +37,11 @@ function applySqlFile(sqlite: Database.Database, file: string) {
 }
 
 const perspectiveMigration = readdirSync(MIGRATIONS).find((f) => f.startsWith('0007_'))!;
+/** 本次收尾：删掉旧 JSON 列、给评价加 status。 */
+const coordinatesMigration = readdirSync(MIGRATIONS)
+  .filter((f) => f.endsWith('.sql'))
+  .sort()
+  .at(-1)!;
 
 describe('perspective rename migration', () => {
   it('在旧库上改名并保留数据，随后不再有旧表', () => {
@@ -103,6 +108,45 @@ describe('perspective rename migration', () => {
     ).toThrow();
     sqlite.exec(`INSERT INTO interview_questions (id, question, dimension_key, perspective_candidate_id) VALUES ('ok', 'q', 'logic', 'c1')`);
     expect(sqlite.prepare('SELECT count(*) as n FROM interview_questions').get()).toEqual({ n: 1 });
+
+    sqlite.close();
+  });
+});
+
+describe('perspective coordinates migration', () => {
+  it('删掉旧的 questions JSON 列，评价加上 status 且默认 complete', () => {
+    const folder = mkdtempSync(join(tmpdir(), 'jade-migrate-'));
+    mkdirSync(join(folder, 'meta'), { recursive: true });
+    const journal = JSON.parse(readFileSync(join(MIGRATIONS, 'meta', '_journal.json'), 'utf8'));
+    // 迁到「删列之前」的所有迁移
+    const entries = journal.entries.filter((e: { tag: string }) => e.tag !== coordinatesMigration.replace('.sql', ''));
+    for (const entry of entries) {
+      copyFileSync(join(MIGRATIONS, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`));
+    }
+    writeFileSync(join(folder, 'meta', '_journal.json'), JSON.stringify({ ...journal, entries }, null, 2));
+
+    const sqlite = new Database(join(folder, 'before.db'));
+    sqlite.pragma('foreign_keys = ON');
+    migrate(drizzle(sqlite), { migrationsFolder: folder });
+
+    // 旧库里还有 JSON 列与没有 status 的评价
+    sqlite.exec(`
+      INSERT INTO users (id, auth_type) VALUES ('u1', 'local');
+      INSERT INTO perspective_jobs (id, user_id, title, job_description, dimensions, question_count)
+        VALUES ('j1', 'u1', '后端工程师', 'JD 正文', '[]', 5);
+      INSERT INTO perspective_candidates (id, job_id, name, questions)
+        VALUES ('c1', 'j1', '我的简历', '[]');
+      INSERT INTO perspective_evaluations (id, candidate_id, overall_score, dimension_scores, question_evaluations, recommendation)
+        VALUES ('e1', 'c1', 80, '[]', '[]', 'hire');
+    `);
+
+    applySqlFile(sqlite, join(MIGRATIONS, coordinatesMigration));
+
+    const columns = sqlite.prepare('PRAGMA table_info(perspective_candidates)').all() as Array<{ name: string }>;
+    expect(columns.map((c) => c.name)).not.toContain('questions');
+
+    const evaluation = sqlite.prepare('SELECT status FROM perspective_evaluations WHERE id = \'e1\'').get() as Record<string, unknown>;
+    expect(evaluation.status).toBe('complete');
 
     sqlite.close();
   });

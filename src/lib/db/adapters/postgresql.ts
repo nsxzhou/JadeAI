@@ -39,12 +39,13 @@ export class PostgreSQLAdapter implements DatabaseAdapter {
       console.error('[DB] PostgreSQL migration failed:', e);
     }
 
-    // 题目升格为实体：把旧的 questions JSON 列迁成 interview_questions 行。
+    // 旧面试官视角坐标 → 两层坐标（岗位族 / 语言栈 / 逐维度题数）。
+    // 幂等：已经回填过的岗位直接跳过。
     try {
-      const { backfillLegacyQuestions } = await import('../backfill-questions');
-      await backfillLegacyQuestions(this.db);
+      const { backfillPerspectiveCoordinates } = await import('../backfill-perspective-coordinates');
+      await backfillPerspectiveCoordinates(this.db);
     } catch (e) {
-      console.error('[DB] legacy question backfill failed:', e);
+      console.error('[DB] perspective coordinate backfill failed:', e);
     }
 
     // Auto-seed if empty

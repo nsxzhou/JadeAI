@@ -43,6 +43,13 @@
       "when": 1792147223039,
       "tag": "0005_perpetual_mongu",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792214258921,
+      "tag": "0006_special_mercury",
+      "breakpoints": true
     }
   ]
 }

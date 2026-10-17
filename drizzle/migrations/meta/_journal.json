@@ -57,6 +57,13 @@
       "when": 1792147203609,
       "tag": "0007_productive_piledriver",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792214228703,
+      "tag": "0008_bored_tag",
+      "breakpoints": true
     }
   ]
 }
