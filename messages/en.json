@@ -619,7 +619,7 @@
       "features": "Features",
       "templates": "Templates",
       "interview": "Mock Interview",
-      "recruit": "Hiring",
+      "perspective": "Interviewer's view",
       "getStarted": "Get Started",
       "dashboard": "Dashboard"
     },
@@ -952,7 +952,12 @@
       "latest": "Latest {score}",
       "delta": "Change {delta}",
       "back": "Back to lobby",
-      "weak": "Weak-question notebook"
+      "weak": "Weak-question notebook",
+      "source": {
+        "mock": "Mock interview",
+        "perspective": "Interviewer's view"
+      },
+      "sourceHint": "Both modes share one set of scoring coordinates, so they share one chart; every point is labelled with its source."
     },
     "weak": {
       "title": "Weak-question notebook",
@@ -968,7 +973,11 @@
       "back": "Back to lobby",
       "profile": "Skill profile",
       "skipped": "Skipped",
-      "timedOut": "Timed out"
+      "timedOut": "Timed out",
+      "source": {
+        "mock": "Mock interview",
+        "perspective": "Interviewer's view"
+      }
     }
   },
   "desktopUpdate": {
@@ -1057,7 +1066,7 @@
     },
     "dimensions": {
       "title": "Competencies to assess",
-      "hint": "Each slider directly sets the number of questions for that dimension",
+      "hint": "Each slider sets how many questions that dimension gets — it is not a scoring weight. General dimensions are always assessed and cannot be removed.",
       "totalQuestions": "{count} questions in total",
       "addCustom": "Add custom competency",
       "aiRecognize": "AI detect",
@@ -1117,7 +1126,11 @@
       "testing_strategy": "Testing strategy",
       "cicd_delivery": "CI/CD & delivery",
       "observability_incident": "Observability & incidents",
-      "candidate_questions": "Questions for the interviewer"
+      "candidate_questions": "Questions for the interviewer",
+      "generalLayer": "General layer (always assessed)",
+      "familyLayer": "Family layer (by role family)",
+      "generalLocked": "General dimensions are always covered and cannot be removed",
+      "customHint": "Custom dimensions only count for this interview; they never enter the skill profile."
     },
     "addFlow": {
       "createTitle": "Add resume analysis",
@@ -1236,13 +1249,36 @@
       "overallComment": "Comprehensive feedback",
       "overallCommentHint": "Use concrete answers to assess my technical ability, problem solving, collaboration, JD fit, risks, and the predicted verdict",
       "recommendationReason": "Rationale",
-      "regenerateConfirm": "Re-evaluating replaces the current evaluation. Continue?"
+      "regenerateConfirm": "Re-evaluating replaces the current evaluation. Continue?",
+      "progress": "Scored {done}/{total} questions",
+      "continuing": "Scoring the next batch…",
+      "continue": "Continue",
+      "partialHint": "Evaluation was interrupted: scored questions are kept. Press \"Continue\" to resume from where it stopped.",
+      "resume": "Resume the previous evaluation"
     },
     "errors": {
       "loadFailed": "Failed to load",
       "saveFailed": "Failed to save",
       "generateFailed": "Generation failed — check your AI settings and retry",
       "parseFailed": "Could not parse the resume — try another file or paste the text"
+    },
+    "roleFamilyLabel": "Target role family",
+    "roleFamilyHint": "The role family decides the family-layer scoring coordinates and required question types. Switching it swaps family dimensions; the general layer and custom dimensions stay.",
+    "primaryStackLabel": "Primary stack",
+    "questionCountRange": "Total questions must be between {min} and {max} (max 5 per dimension, at least 1 per general dimension)",
+    "roleFamilies": {
+      "backend": "Backend",
+      "frontend": "Frontend",
+      "data_algo": "Data / Algorithms",
+      "qa_infra": "QA / Infra",
+      "other": "Other"
+    },
+    "primaryStacks": {
+      "go": "Go",
+      "java": "Java",
+      "python": "Python",
+      "node": "Node / Frontend",
+      "none": "Unspecified"
     }
   }
 }

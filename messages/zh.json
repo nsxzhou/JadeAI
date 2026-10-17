@@ -619,7 +619,7 @@
       "features": "功能特色",
       "templates": "模板库",
       "interview": "模拟面试",
-      "recruit": "招聘",
+      "perspective": "面试官视角",
       "getStarted": "立即开始",
       "dashboard": "工作台"
     },
@@ -952,7 +952,12 @@
       "latest": "最近 {score}",
       "delta": "变化 {delta}",
       "back": "返回面试大厅",
-      "weak": "错题本"
+      "weak": "错题本",
+      "source": {
+        "mock": "模拟面试",
+        "perspective": "面试官视角"
+      },
+      "sourceHint": "两种玩法共用同一套评分坐标，所以画在同一条线上；每个点标了来源。"
     },
     "weak": {
       "title": "错题本",
@@ -968,7 +973,11 @@
       "back": "返回面试大厅",
       "profile": "能力画像",
       "skipped": "已跳过",
-      "timedOut": "超时"
+      "timedOut": "超时",
+      "source": {
+        "mock": "模拟面试",
+        "perspective": "面试官视角"
+      }
     }
   },
   "desktopUpdate": {
@@ -1057,7 +1066,7 @@
     },
     "dimensions": {
       "title": "考察维度",
-      "hint": "每个滑块直接设置该维度生成几道题，总题数自动相加",
+      "hint": "滑块设的是「这一维出几道题」，与评分权重无关。通用层每场必测，不能移除。",
       "totalQuestions": "合计生成 {count} 道题",
       "addCustom": "添加自定义维度",
       "aiRecognize": "AI 识别",
@@ -1117,7 +1126,11 @@
       "testing_strategy": "测试策略",
       "cicd_delivery": "CI/CD 与交付",
       "observability_incident": "可观测性与故障",
-      "candidate_questions": "反问环节"
+      "candidate_questions": "反问环节",
+      "generalLayer": "通用层（每场必测）",
+      "familyLayer": "族层（按岗位族）",
+      "generalLocked": "通用层维度恒定覆盖，不可移除",
+      "customHint": "自定义维度只参与本场评分与报告，不计入能力画像。"
     },
     "addFlow": {
       "createTitle": "添加简历分析",
@@ -1236,13 +1249,36 @@
       "overallComment": "综合反馈",
       "overallCommentHint": "结合具体回答说明我的技术能力、问题解决、沟通协作、JD 匹配度、风险与判决预测",
       "recommendationReason": "结论理由",
-      "regenerateConfirm": "重新评价会覆盖现有评价，确定吗？"
+      "regenerateConfirm": "重新评价会覆盖现有评价，确定吗？",
+      "progress": "已评 {done}/{total} 题",
+      "continuing": "正在评估下一块…",
+      "continue": "继续生成",
+      "partialHint": "评估已中断：已评的题不会重跑，点「继续生成」从断点接着评。",
+      "resume": "继续上次的评估"
     },
     "errors": {
       "loadFailed": "加载失败",
       "saveFailed": "保存失败",
       "generateFailed": "生成失败，请检查 AI 配置后重试",
       "parseFailed": "简历解析失败，请换一份文件或改用粘贴文本"
+    },
+    "roleFamilyLabel": "目标岗位族",
+    "roleFamilyHint": "岗位族决定族层评分坐标与必考题型；切换岗位族会换掉族层维度，通用层与自定义维度保留。",
+    "primaryStackLabel": "主要语言栈",
+    "questionCountRange": "总题数需在 {min}–{max} 之间（每维最多 5 题，通用层至少 1 题）",
+    "roleFamilies": {
+      "backend": "后端",
+      "frontend": "前端",
+      "data_algo": "数据 / 算法",
+      "qa_infra": "测试 / 运维",
+      "other": "其他"
+    },
+    "primaryStacks": {
+      "go": "Go",
+      "java": "Java",
+      "python": "Python",
+      "node": "Node / 前端",
+      "none": "不指定"
     }
   }
 }
