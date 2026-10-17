@@ -300,6 +300,20 @@ InterviewConfig {
 - **交互**：保留现有文档式形态——面试台全屏、逐题边问边记、防抖落库、键盘切题。**这些是已被验证的形态，不改。**
 - **新增**：出题改用共享内核（岗位族 + 蓝图 + 两层坐标）。
 
+### 7.5.1 落地结论（阶段 9 收尾）
+
+`/interview/perspective` 的坐标与候选人侧完全一致：岗位族 + 语言栈定族层维度，
+`question_counts` 定每维题数，`weight` 只表评分权重。三处细节由实现计划锁定：
+
+1. **旧维度归位**——`communication_pressure → general_stress`、
+   `hr_motivation → general_communication`，题型（`category`）保留不动。这正是
+   「题型与评分坐标解耦」的用途：问一道求职动机题，分数落在沟通表达坐标上。
+   通用层仍保持 4 维，不为「动机」新增坐标（坐标沉淀后不可改）。
+2. **自定义维度**保留，归入族层、权重 2，只参与本场评分与报告，**不进能力画像**
+   （key 不在目录里，`buildProfile` 自动排除）。
+3. **画像与错题本合并两个来源**：两种玩法共用坐标，画在同一条线上，每个点带
+   `source: mock | perspective`；错题本同理，重练一律新建一场模拟面试。
+
 ### 7.6 语音（本期不做）
 
 范围与技术的结论已定，留待后续实施：
@@ -377,7 +391,9 @@ UI 无自动化测试（仓库无 jsdom / testing-library），靠 type-check、
 ## 12. 待确认
 
 1. **第 5 节**：题目统一落进 `interview_questions` 表（含一次数据迁移）——**已确认**。
-2. 实现计划见 `docs/superpowers/plans/2026-10-16-interview-unification.md`。
+2. **第 7.5.1 节**：面试官视角的三处坐标细节（旧维度归位 / 自定义维度不进画像 /
+   画像合并来源）——**已确认**，实现见阶段 9。
+3. 实现计划见 `docs/superpowers/plans/2026-10-16-interview-unification.md`。
 
 ## 13. 已锁定的落地决策（实现计划补充）
 

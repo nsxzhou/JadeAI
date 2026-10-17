@@ -244,31 +244,61 @@ interface InterviewQuestion {
 | 1 止漏 | ✅ 完成 | 控制指令落库、消息 id 与服务端一致、题数硬上限、列表分数与进度、删 systemPrompt、拖拽排序；补 repository/进度测试 |
 | 2 内核 | ✅ 完成（有过渡项） | `src/lib/interview-core/` 全部文件 + 内核测试；两层坐标目录、岗位族、服务端算分、蓝图泛化、画像、错题本；类型改为从内核再导出；删 `dimension-guides.ts` |
 | 3 翻转 | ✅ 完成（见过渡项） | 三张表改名 + 新增列 + 删 `dimensions_override`；新增 `interview_questions` + JSON 回填；路由/代码路径/i18n 改名；同一入口模式切换；保留字守卫；死代码与 N+1 清理 |
-| 4 可信报告 | ⬜ 未开始 | 强 schema、单题分链路、两段式报告、追溯 |
-| 5 蓝图出题 | ⬜ 未开始 | 候选人侧蓝图、入 prompt 三分类、槽位驱动对话、`DROP COLUMN questions` |
-| 6 真实约束 | ⬜ 未开始 | 限时/超时/不可回改/压力面/反问/轮次状态 |
-| 7 资产 | ⬜ 未开始 | 画像与错题本 API 与 UI、重练 |
-| 8 语音 | 🟡 仅接口 | `interview-core/speech.ts` 预留 `SpeechToText` 与「转写修正 ≠ 答案修改」裁决 |
-
 | 4 可信报告 | ✅ 完成 | 强 schema、单题分链路（AI 只给档位）、服务端维度/总分聚合、两段式（逐轮可重试 + 汇总不重读全文）、原始回答可追溯；两个模式都不再由 AI 产出维度分 |
 | 5 蓝图出题 | ✅ 完成（DROP COLUMN 例外） | 候选人侧蓝图→校验→逐维度并发生成→落 `interview_questions`；事实三分类沿用已验证 prompt；槽位驱动对话与 `currentQuestionId`；反问固定末槽；面试官 focusAreas 降级 |
 | 6 真实约束 | ✅ 完成 | 限时/超时保全/不可回改/压力面/反问/轮次起止时间；每题倒计时与自动推进 |
 | 7 资产 | ✅ 完成 | 两层坐标能力画像、跨场次错题本、重练（复制 + `originQuestionId`）、画像与错题本页面；`history-comparison` 并入后删除 |
 | 8 语音 | 🟡 仅接口 | `interview-core/speech.ts` 预留 `SpeechToText` 与「转写修正 ≠ 答案修改」裁决 |
+| 9 收尾 | ✅ 完成 | 面试官视角接入两层坐标、题数与评分权重分开、评价两段式、画像/错题本合并来源、`DROP COLUMN questions` |
 
-### 唯一未执行的一条：`DROP COLUMN questions`（有意推迟）
+### 阶段 9 — 收尾（原「剩余收尾 1–5」+ 有意推迟的 `DROP COLUMN`）
 
-计划阶段 5 第 6 步要求在停止 JSON 读取后追加 `DROP COLUMN questions`。**没有执行**，原因是一处顺序陷阱：
+阶段 2/3 在面试官视角一侧只做了改名：三列（`role_family_key` / `primary_stack` /
+`question_counts`）建了却零读取点，出题仍走旧 7 项目录 + `detectGoRole`，
+`weight` 仍兼任题数，评价仍是一次 `generateText` 出全套分数。阶段 9 把这条尾巴收掉：
+
+| # | 项 | 落点 |
+|---|---|---|
+| 1 | 面试官视角改用两层坐标 | 出题走 `sessionDimensions` + 内核 `validateBlueprint`；`dimension` 与 `category` 解耦 |
+| 2 | 题数与评分权重分开 | 滑块写 `question_counts`，`weight` 回到纯评分口径（通用 1 / 族层与自定义 2） |
+| 3 | 旧维度归位 | `communication_pressure → general_stress`、`hr_motivation → general_communication`；题型保留，评分落到通用层 |
+| 4 | 自定义维度 | 保留为族层维度，只参与本场评分，不进画像 |
+| 5 | 评价两段式 | 分块逐题（块大小 5）→ 汇总；单题分 `clampScoreToTier` 落库；块失败保留已评、可续跑 |
+| 6 | 资产合并 | `/api/interview/profile` 与 `/api/interview/weak-questions` 并入面试官视角；重练兼容无会话来源 |
+| 7 | 旧目录与死代码 | 删 `lib/perspective/dimensions.ts`（旧 7 目录与三份重复文案）、`ai/perspective-blueprint.ts`（`isGoRole` 适配层）、`/api/interview/history/stats` |
+| 8 | `DROP COLUMN questions` | 应用层回填已随上一发布跑过一轮，本次迁移直接删列；同时删 `backfill-questions.ts` 与两个 adapter 的调用 |
+| 9 | 文档 | 本节、设计文档 §7.5 / §12、计划文档状态表（原来两份互相矛盾的表已删） |
+
+新增的迁移：`perspective_evaluations.status`（`partial` / `complete`，分块评估的中间态需要它）。
+
+### 已执行的 `DROP COLUMN questions`（原推迟项）
+
+计划阶段 5 第 6 步要求在停止 JSON 读取后追加 `DROP COLUMN questions`。当时**有意推迟**，原因是一处顺序陷阱：
 
 - `migrate()` 在 adapter 里先跑完所有待应用的迁移，`backfillLegacyQuestions()` 在它之后才运行；
 - 若把 `DROP COLUMN` 放进同一次发布的迁移里，已有旧库会在回填之前就把 JSON 列删掉——**数据直接丢**。
 
-正确做法是等回填在所有存量安装上跑过一次（现已随启动执行，并把该列置 NULL），再在**后续发布**里加这条 `DROP COLUMN`。届时同时删掉 `src/lib/db/backfill-questions.ts` 与两个 adapter 里的调用。
+正确做法是等回填在所有存量安装上跑过一次（已随启动执行，并把该列置 NULL），再在**后续发布**里加这条 `DROP COLUMN`。
 
-### 剩余收尾（不影响功能）
+阶段 9 已按这个顺序执行：回填随上一发布在所有存量安装跑过一轮，本次迁移
+（sqlite `0008_*` / pg `0006_*`）删列，并删掉 `src/lib/db/backfill-questions.ts`
+与两个 adapter 里的调用。
 
-1. **面试官视角 UI 仍把 `weight` 当题数**（`dimension-chips.tsx` 滑块）；`question_counts` 列已就位，UI 待改成逐维度 `questionCounts`。
-2. **面试官视角的评价仍是「一次生成全轮」**（没有候选人侧的两段式与可重试），但维度分已改为服务端聚合。
-3. **旧维度 key（`professional` 等）仍在 `dimensions.ts` 的旧目录里**，面试官视角继续用它出题；换成两层坐标目录时一并清掉。
-4. **`/api/interview/history/stats` 已无 UI 引用**（历史对比并入画像），可删。
-5. **UI 截图核对未做**；已验证 `pnpm build` 通过、新路由已注册、中英键路径一致。
+> 注意：这条迁移的数据安全前提是「上一发布已启动过一次」。跨版本直接升级
+> （跳过上一发布）的安装会丢掉 JSON 列里的旧题目——这些题目在上一发布已迁成行，
+> 但只在启动过之后才成立。
+
+### 剩余收尾（阶段 9 已全部关闭）
+
+原「剩余收尾 1–5」的处置：
+
+| # | 原项 | 处置 |
+|---|---|---|
+| 1 | 面试官视角 UI 把 `weight` 当题数 | ✅ 滑块改写 `question_counts`；`DimensionChips` 现在按层显示（通用层锁定、族层可关） |
+| 2 | 面试官视角评价一次生成全轮 | ✅ 改成「分块逐题 → 汇总」，`perspective_evaluations.status` 记录 `partial` / `complete` |
+| 3 | 旧维度 key 仍在 `dimensions.ts` | ✅ `lib/perspective/dimensions.ts` 整个删除，目录只剩 `interview-core/dimension.ts` 一份 |
+| 4 | `/api/interview/history/stats` 无引用 | ✅ 删除 |
+| 5 | UI 截图核对未做 | ⬜ 仍靠 `pnpm build` + type-check 门禁；截图归档见 `docs/design/screenshots/` |
+
+仍然存在、但属于「非本计划范围」的一项：全仓约 1340 个 `no-explicit-any` 的 lint 基线，
+验收标准仍是「不新增」。
