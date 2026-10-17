@@ -20,10 +20,13 @@ export async function GET(request: NextRequest) {
 
   const rows = await interviewRepository.findQuestionsByUserId(user.id);
 
+  // 两种玩法一起看：模拟面试里答砸的题、面试官视角标出来的弱项，是同一件事。
   const entries = groupWeakQuestions(
     rows.map((row) => ({
       question: rowToQuestion(row.question),
       sessionId: row.sessionId,
+      jobTitle: row.jobTitle,
+      source: row.source,
       createdAt: row.createdAt,
     })),
   );

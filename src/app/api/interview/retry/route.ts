@@ -44,21 +44,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No matching questions' }, { status: 404 });
   }
 
-  const sourceSession = await interviewRepository.findSession(sources[0].sessionId);
-  const sourceRounds = await interviewRepository.findRoundsBySessionId(sources[0].sessionId);
+  // 来源可能是模拟面试，也可能是面试官视角（没有会话）。挑第一个有会话的当元数据来源，
+  // 都没有就用题目自带的岗位信息。
+  const withSession = sources.find((row) => row.sessionId);
+  const sourceSession = withSession?.sessionId
+    ? await interviewRepository.findSession(withSession.sessionId)
+    : null;
+  const sourceRounds = withSession?.sessionId
+    ? await interviewRepository.findRoundsBySessionId(withSession.sessionId)
+    : [];
   const interviewerConfig = sourceRounds[0]?.interviewerConfig
     ?? getPresetInterviewer('technical', locale === 'en' ? 'en' : 'zh');
+
+  const jobDescription = sourceSession?.jobDescription || sources[0].jobDescription || '';
+  const jobTitle = sourceSession?.jobTitle || sources[0].jobTitle || '';
+  const roleFamilyKey = sourceSession?.roleFamilyKey ?? sources[0].roleFamilyKey ?? null;
+  const primaryStack = sourceSession?.primaryStack ?? sources[0].primaryStack ?? null;
 
   const total = sources.length;
   const session = await interviewRepository.createSession({
     userId: user.id,
-    jobDescription: sourceSession?.jobDescription ?? '',
-    jobTitle: sourceSession?.jobTitle ? `重练 · ${sourceSession.jobTitle}` : '错题重练',
+    jobDescription,
+    jobTitle: jobTitle ? `重练 · ${jobTitle}` : '错题重练',
     selectedInterviewers: interviewerConfig ? [interviewerConfig] : [],
-    roleFamilyKey: normalizeRoleFamily(sourceSession?.roleFamilyKey),
-    primaryStack: normalizePrimaryStack(sourceSession?.primaryStack),
+    roleFamilyKey: normalizeRoleFamily(roleFamilyKey),
+    primaryStack: normalizePrimaryStack(primaryStack),
     questionCountPreset: 'short',
-    stressLevel: sourceSession?.stressLevel ?? 'gentle',
+    stressLevel: (sourceSession?.stressLevel as never) ?? 'gentle',
     totalTimeLimitSec: sessionTimeLimitSec(total),
     startedAt: new Date(),
   });

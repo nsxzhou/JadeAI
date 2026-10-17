@@ -10,7 +10,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getAIHeaders } from '@/stores/settings-store';
 import { cn } from '@/lib/utils';
 
-interface Attempt { sessionId: string; answer: string; score: number | null; createdAt: string }
+type WeakSource = 'mock' | 'perspective';
+interface Attempt { sessionId: string | null; answer: string; score: number | null; createdAt: string; source?: WeakSource }
 interface Entry {
   rootId: string;
   question: {
@@ -21,7 +22,9 @@ interface Entry {
     timedOut?: boolean;
     markedWeak?: boolean;
   };
-  sessionId: string;
+  sessionId: string | null;
+  source?: WeakSource;
+  jobTitle?: string;
   attempts: Attempt[];
 }
 
@@ -133,6 +136,12 @@ export default function WeakQuestionsPage() {
                       )}
                       {entry.question.status === 'skipped' && (
                         <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-500 dark:bg-zinc-800">{t('skipped')}</span>
+                      )}
+                      <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] text-brand">
+                        {t(`source.${entry.source ?? 'mock'}`)}
+                      </span>
+                      {entry.jobTitle && (
+                        <span className="truncate text-[10px] text-zinc-400">{entry.jobTitle}</span>
                       )}
                     </div>
                     <p className="mt-1 text-xs text-zinc-500">

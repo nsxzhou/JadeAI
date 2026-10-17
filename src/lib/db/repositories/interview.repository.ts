@@ -1,6 +1,14 @@
 import { eq, desc, and, inArray } from 'drizzle-orm';
 import { db } from '../index';
-import { interviewSessions, interviewRounds, interviewMessages, interviewReports, interviewQuestions } from '../schema';
+import {
+  interviewSessions,
+  interviewRounds,
+  interviewMessages,
+  interviewReports,
+  interviewQuestions,
+  perspectiveCandidates,
+  perspectiveJobs,
+} from '../schema';
 import { questionToRow, type InterviewQuestionRow } from '@/lib/interview-core/legacy-questions';
 import type {
   InterviewerConfig,
@@ -19,9 +27,14 @@ import type {
 /** 跨场次查询的题目行：题目 + 它属于哪个场次。 */
 export interface UserQuestionRow {
   question: Record<string, unknown>;
-  sessionId: string;
+  /** 面试官视角的题目不属于任何会话，为 null */
+  sessionId: string | null;
   jobTitle: string;
+  jobDescription: string;
   roleFamilyKey: string | null;
+  primaryStack: string | null;
+  /** 题目的来源：模拟面试 / 面试官视角 */
+  source: 'mock' | 'perspective';
   createdAt: string;
 }
 
@@ -263,29 +276,43 @@ export const interviewRepository = {
    */
   async findQuestionsByUserId(userId: string): Promise<UserQuestionRow[]> {
     const sessions = await db
-      .select({ id: interviewSessions.id, jobTitle: interviewSessions.jobTitle, roleFamilyKey: interviewSessions.roleFamilyKey })
+      .select({
+        id: interviewSessions.id,
+        jobTitle: interviewSessions.jobTitle,
+        jobDescription: interviewSessions.jobDescription,
+        roleFamilyKey: interviewSessions.roleFamilyKey,
+        primaryStack: interviewSessions.primaryStack,
+      })
       .from(interviewSessions)
       .where(eq(interviewSessions.userId, userId));
-    if (sessions.length === 0) return [];
+    if (sessions.length === 0) {
+      return this.findPerspectiveQuestionsByUserId(userId);
+    }
 
-    const sessionById = new Map<string, { id: string; jobTitle: string; roleFamilyKey: string | null }>(
-      sessions.map((session: { id: string; jobTitle: string; roleFamilyKey: string | null }) => [session.id, session]),
+    const sessionById = new Map<string, {
+      id: string;
+      jobTitle: string;
+      jobDescription: string;
+      roleFamilyKey: string | null;
+      primaryStack: string | null;
+    }>(
+      sessions.map((session: any) => [session.id, session]),
     );
     const rounds = await db
       .select({ id: interviewRounds.id, sessionId: interviewRounds.sessionId })
       .from(interviewRounds)
       .where(inArray(interviewRounds.sessionId, sessions.map((session: { id: string }) => session.id)));
-    if (rounds.length === 0) return [];
-
     const roundToSession = new Map<string, string>(
       rounds.map((round: { id: string; sessionId: string }) => [round.id, round.sessionId]),
     );
-    const questions = await db
-      .select()
-      .from(interviewQuestions)
-      .where(inArray(interviewQuestions.roundId, rounds.map((round: { id: string }) => round.id)));
+    const questions = rounds.length > 0
+      ? await db
+        .select()
+        .from(interviewQuestions)
+        .where(inArray(interviewQuestions.roundId, rounds.map((round: { id: string }) => round.id)))
+      : [];
 
-    return questions
+    const mockRows = questions
       .map((row: Record<string, unknown>): UserQuestionRow | null => {
         const sessionId = roundToSession.get(String(row.roundId));
         if (!sessionId) return null;
@@ -294,11 +321,53 @@ export const interviewRepository = {
           question: row,
           sessionId,
           jobTitle: String(session?.jobTitle ?? ''),
+          jobDescription: String(session?.jobDescription ?? ''),
           roleFamilyKey: session?.roleFamilyKey ?? null,
+          primaryStack: session?.primaryStack ?? null,
+          source: 'mock',
           createdAt: new Date((row.updatedAt as Date | string | undefined) ?? Date.now()).toISOString(),
         };
       })
       .filter((value: UserQuestionRow | null): value is UserQuestionRow => value !== null);
+
+    return [...mockRows, ...(await this.findPerspectiveQuestionsByUserId(userId))];
+  },
+
+  /**
+   * 面试官视角的题目：同样落 `interview_questions`，但没有会话。
+   *
+   * 错题本与重练要把两种玩法一起看——「面试官视角标出来的弱项」和模拟面试里
+   * 答砸的题，对求职者是同一件事。
+   */
+  async findPerspectiveQuestionsByUserId(userId: string): Promise<UserQuestionRow[]> {
+    const rows = await db
+      .select({
+        question: interviewQuestions,
+        jobTitle: perspectiveJobs.title,
+        jobDescription: perspectiveJobs.jobDescription,
+        roleFamilyKey: perspectiveJobs.roleFamilyKey,
+        primaryStack: perspectiveJobs.primaryStack,
+      })
+      .from(interviewQuestions)
+      .innerJoin(
+        perspectiveCandidates,
+        eq(perspectiveCandidates.id, interviewQuestions.perspectiveCandidateId),
+      )
+      .innerJoin(perspectiveJobs, eq(perspectiveJobs.id, perspectiveCandidates.jobId))
+      .where(eq(perspectiveJobs.userId, userId));
+
+    return rows.map((row: Record<string, any>): UserQuestionRow => ({
+      question: row.question as Record<string, unknown>,
+      sessionId: null,
+      jobTitle: String(row.jobTitle ?? ''),
+      jobDescription: String(row.jobDescription ?? ''),
+      roleFamilyKey: row.roleFamilyKey ?? null,
+      primaryStack: row.primaryStack ?? null,
+      source: 'perspective',
+      createdAt: new Date(
+        (row.question?.updatedAt as Date | string | undefined) ?? Date.now(),
+      ).toISOString(),
+    }));
   },
 
   /** 更新单题（答录、评分、标记）。只允许改白名单字段。 */

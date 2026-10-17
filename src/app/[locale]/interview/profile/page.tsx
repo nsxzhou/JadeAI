@@ -10,7 +10,8 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
-interface ProfilePoint { sessionId: string; createdAt: string; score: number }
+type ProfileSource = 'mock' | 'perspective';
+interface ProfilePoint { sessionId: string; createdAt: string; score: number; source?: ProfileSource }
 interface Series { key: string; label: string; points: ProfilePoint[]; latest: number | null; delta: number; roleFamilyKey?: string }
 interface Profile { general: Series[]; family: Series[]; sessionCount: number }
 
@@ -69,6 +70,7 @@ export default function ProfilePage() {
       <div>
         <h1 className="text-2xl font-bold">{t('title')}</h1>
         <p className="mt-1 text-sm text-zinc-500">{t('subtitle')}</p>
+        <p className="mt-1 text-xs text-zinc-400">{t('sourceHint')}</p>
       </div>
 
       {loading ? (
@@ -113,6 +115,11 @@ export default function ProfilePage() {
                   <div className={cn('text-[11px] tabular-nums', series.delta >= 0 ? 'text-green-600' : 'text-red-500')}>
                     {t('delta', { delta: `${series.delta >= 0 ? '+' : ''}${series.delta}` })}
                   </div>
+                  {series.points.length > 0 && (
+                    <div className="mt-0.5 text-[10px] text-zinc-400">
+                      {t(`source.${series.points[series.points.length - 1].source ?? 'mock'}`)}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -133,6 +140,11 @@ export default function ProfilePage() {
                           <div className="text-[11px] text-zinc-400">
                             {t('latest', { score: item.points[item.points.length - 1]?.score ?? '—' })}
                           </div>
+                          {item.points.length > 0 && (
+                            <div className="text-[10px] text-zinc-400">
+                              {t(`source.${item.points[item.points.length - 1].source ?? 'mock'}`)}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
