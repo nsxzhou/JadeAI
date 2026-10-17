@@ -9,7 +9,6 @@ import {
 import { rowToQuestion, questionToRow } from '@/lib/interview-core/legacy-questions';
 import type { CandidateStatRow } from '@/lib/perspective/job-stats';
 import { countAnswered } from '@/lib/perspective/answers';
-import { normalizeQuestions } from '@/lib/perspective/questions';
 // 岗位和候选人 id 都进 URL，短 id 才念得出来；存量 UUID 继续可用
 import { shortId } from '@/lib/perspective/short-id';
 import type {
@@ -31,6 +30,20 @@ import type {
 export type PerspectiveCandidateRow = typeof perspectiveCandidates.$inferSelect & {
   questions: InterviewQuestion[] | null;
 };
+
+/** JSON 列在 sqlite 是对象/数组、在 pg 是 text；两种形态都读成数组。 */
+function parseJsonArray<T>(raw: unknown): T[] {
+  if (Array.isArray(raw)) return raw as T[];
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as T[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 export const perspectiveRepository = {
   // ── Jobs ────────────────────────────────────────────────────────────────────
@@ -268,6 +281,38 @@ export const perspectiveRepository = {
     await db.delete(perspectiveCandidates).where(eq(perspectiveCandidates.id, candidateId));
   },
 
+  /**
+   * 能力画像的数据源：该用户名下所有已完成的面试官视角评价。
+   *
+   * 只取画图要用的三列，评价的大 JSON 不进这里；坐标能不能识别由 `buildProfile`
+   * 判定（老评价的自定义 key 会被排除）。
+   */
+  async findEvaluationProfilesByUserId(userId: string): Promise<Array<{
+    candidateId: string;
+    createdAt: Date | string;
+    roleFamilyKey: string | null;
+    dimensionScores: DimensionScore[];
+  }>> {
+    const rows = await db
+      .select({
+        candidateId: perspectiveCandidates.id,
+        createdAt: perspectiveEvaluations.createdAt,
+        roleFamilyKey: perspectiveJobs.roleFamilyKey,
+        dimensionScores: perspectiveEvaluations.dimensionScores,
+      })
+      .from(perspectiveEvaluations)
+      .innerJoin(perspectiveCandidates, eq(perspectiveCandidates.id, perspectiveEvaluations.candidateId))
+      .innerJoin(perspectiveJobs, eq(perspectiveJobs.id, perspectiveCandidates.jobId))
+      .where(eq(perspectiveJobs.userId, userId));
+
+    return rows.map((row: any) => ({
+      candidateId: row.candidateId as string,
+      createdAt: row.createdAt as Date | string,
+      roleFamilyKey: (row.roleFamilyKey ?? null) as string | null,
+      dimensionScores: parseJsonArray<DimensionScore>(row.dimensionScores),
+    }));
+  },
+
   // ── Evaluations ─────────────────────────────────────────────────────────────
 
   async findEvaluation(candidateId: string): Promise<typeof perspectiveEvaluations.$inferSelect | null> {
@@ -293,6 +338,8 @@ export const perspectiveRepository = {
     strengths: string[];
     concerns: string[];
     overallComment: string;
+    /** partial = 逐题段还在跑；complete = 汇总段已落定 */
+    status?: 'partial' | 'complete';
   }) {
     await db
       .delete(perspectiveEvaluations)
@@ -309,7 +356,54 @@ export const perspectiveRepository = {
       strengths: data.strengths as any,
       concerns: data.concerns as any,
       overallComment: data.overallComment,
+      status: data.status ?? 'complete',
     } as any);
     return this.findEvaluation(data.candidateId);
+  },
+
+  /**
+   * 存一块逐题评估。
+   *
+   * 分块评估的中间态必须落库，否则第二块失败时第一块的结论就丢了，
+   * 用户只能从头再花一次模型调用。汇总字段先留空（status = partial）。
+   */
+  async saveEvaluationChunk(candidateId: string, evaluations: QuestionEvaluation[]) {
+    const existing = await this.findEvaluation(candidateId);
+    const merged = new Map<string, QuestionEvaluation>(
+      ((existing?.questionEvaluations ?? []) as QuestionEvaluation[])
+        .filter((item) => Boolean(item.questionId))
+        .map((item) => [item.questionId as string, item] as const),
+    );
+    for (const evaluation of evaluations) {
+      if (evaluation.questionId) merged.set(evaluation.questionId, evaluation);
+    }
+
+    return this.upsertEvaluation({
+      candidateId,
+      overallScore: existing?.overallScore ?? 0,
+      dimensionScores: ((existing?.dimensionScores ?? []) as DimensionScore[]),
+      questionEvaluations: [...merged.values()],
+      recommendation: (existing?.recommendation ?? 'hold') as Recommendation,
+      recommendationReason: existing?.recommendationReason ?? '',
+      strengths: ((existing?.strengths ?? []) as string[]),
+      concerns: ((existing?.concerns ?? []) as string[]),
+      overallComment: existing?.overallComment ?? '',
+      status: 'partial',
+    });
+  },
+
+  /** 「重新生成」：清掉旧评价与旧单题分，从头跑一遍两段式。 */
+  async resetEvaluation(candidateId: string) {
+    await db
+      .delete(perspectiveEvaluations)
+      .where(eq(perspectiveEvaluations.candidateId, candidateId));
+  },
+
+  /** 单题分落库。面试官视角的题目只在这张表里，所以按 id 更新即可。 */
+  async updateQuestionScore(questionId: string, data: { tier: string | null; score: number | null }) {
+    await db
+      .update(interviewQuestions)
+      .set({ tier: data.tier, score: data.score } as any)
+      .where(eq(interviewQuestions.id, questionId));
   },
 };

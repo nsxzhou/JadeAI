@@ -1,11 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { dimensionColor } from './dimension-colors';
-import { PRESET_DIMENSION_KEYS } from './dimensions';
+import { resolveDimensions } from '@/lib/interview-core/dimension';
+import { ROLE_FAMILY_KEYS, PRIMARY_STACKS } from '@/lib/interview-core/role-family';
 
 describe('dimensionColor', () => {
-  it('预置面试维度各有一套颜色，且互不相同', () => {
-    const dots = PRESET_DIMENSION_KEYS.map((k) => dimensionColor(k).dot);
-    expect(new Set(dots).size).toBe(PRESET_DIMENSION_KEYS.length);
+  it('同一场面试里出现的维度彼此不同色（每个岗位族各验一次）', () => {
+    for (const roleFamily of ROLE_FAMILY_KEYS) {
+      for (const stack of PRIMARY_STACKS) {
+        const keys = resolveDimensions(roleFamily, stack).map((definition) => definition.key);
+        const dots = keys.map((key) => dimensionColor(key).dot);
+        expect(new Set(dots).size, `${roleFamily}/${stack}`).toBe(keys.length);
+      }
+    }
   });
 
   it('同一个 key 每次都得到同一个颜色', () => {

@@ -28,6 +28,7 @@ export {
   QUESTION_COUNT_MIN,
   QUESTION_COUNT_MAX,
   QUESTION_COUNT_DEFAULT,
+  QUESTION_COUNT_PER_DIMENSION_MAX,
 } from '@/lib/interview-core/types';
 
 /** 旧名，等价于内核的 QuestionStatus（'pending' | 'asked' | ...）。 */
@@ -44,9 +45,10 @@ export interface RecruitJob {
   title: string;
   jobDescription: string;
   dimensions: import('@/lib/interview-core/types').DimensionConfig[];
-  /** 目标岗位所在的岗位族 */
-  roleFamilyKey: string;
-  primaryStack: string;
+  /** 目标岗位所在的岗位族；老数据可能为空，读取时用 normalizeJobCoordinates 兜底 */
+  roleFamilyKey?: string | null;
+  primaryStack?: string | null;
+  /** 派生值 = 逐维度题数之和 */
   questionCount: number;
   /** 逐维度题数（面试官视角可调）；缺省时由 planQuestionCounts 推导 */
   questionCounts?: Record<string, number> | null;

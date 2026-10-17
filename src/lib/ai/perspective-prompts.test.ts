@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildInterviewBlueprintPrompt,
   buildDimensionQuestionsPrompt,
-  buildEvaluationPrompt,
+  buildPerspectiveSummaryPrompt,
+  buildQuestionEvaluationPrompt,
 } from './perspective-prompts';
 import { normalizeQuestions } from '@/lib/perspective/questions';
 import type {
@@ -326,11 +327,11 @@ describe('buildInterviewBlueprintPrompt', () => {
   });
 });
 
-describe('buildEvaluationPrompt', () => {
+describe('buildQuestionEvaluationPrompt', () => {
   const questions: InterviewQuestion[] = [
     {
       id: 'q1',
-      dimension: 'logic',
+      dimension: 'general_logic',
       question: '讲一个你排查过的线上问题',
       intent: '看拆解路径',
       rubric: { excellent: '有假设有验证', pass: '能说清现象', fail: '只复述结论' },
@@ -338,67 +339,28 @@ describe('buildEvaluationPrompt', () => {
       referencePoints: ['定位手段'],
       estimatedMinutes: 8,
       difficulty: 'medium',
+      answer: '我先看监控再复现',
     },
   ];
 
-  it('题目的 id、题干和评分标准都进了 prompt', () => {
-    const { prompt } = buildEvaluationPrompt({
+  it('题目的 id、题干、评分标准与逐题回答都进了 prompt', () => {
+    const { prompt } = buildQuestionEvaluationPrompt({
       jobTitle: 'T',
       jobDescription: 'JD',
       resumeText: 'R',
       dimensions: DIMENSIONS,
       questions,
-      transcript: '候选人说了缓存击穿的排查过程',
+      transcript: '速记：候选人说了缓存击穿的排查过程',
     });
     expect(prompt).toContain('q1');
     expect(prompt).toContain('讲一个你排查过的线上问题');
     expect(prompt).toContain('有假设有验证');
+    expect(prompt).toContain('Recorded answer: 我先看监控再复现');
     expect(prompt).toContain('候选人说了缓存击穿的排查过程');
   });
 
-  it('JD 情景题携带来源证据，且不当作候选人过往经历', () => {
-    const jdScenario: InterviewQuestion[] = [{
-      ...questions[0],
-      category: 'system_scenario',
-      source: 'jd',
-      evidence: 'JD requires high-concurrency AI conversations',
-    }];
-    const { system, prompt } = buildEvaluationPrompt({
-      jobTitle: 'Backend Engineer',
-      jobDescription: 'Build high-concurrency AI conversations',
-      resumeText: 'Built internal admin tools',
-      dimensions: DIMENSIONS,
-      questions: jdScenario,
-      transcript: 'The candidate would first measure queue latency.',
-    });
-
-    expect(prompt).toContain('Category: system_scenario');
-    expect(prompt).toContain('Source: jd');
-    expect(prompt).toContain('Evidence: JD requires high-concurrency AI conversations');
-    expect(system).toContain("A JD-sourced question's premise, reference answer, or hypothetical reasoning is not evidence of prior experience");
-    expect(system).toContain("A gap-sourced question's premise, reference answer, or hypothetical reasoning is not evidence of prior experience");
-    expect(system).toContain("An explicit concrete prior-work account in the candidate's recorded answer or transcript may be treated as interview evidence");
-  });
-
-  it('规范化后的历史题不把默认来源当作候选人经历证据', () => {
-    const [legacyQuestion] = normalizeQuestions([questions[0]])!;
-    const { prompt } = buildEvaluationPrompt({
-      jobTitle: 'T',
-      jobDescription: 'JD',
-      resumeText: 'R',
-      dimensions: DIMENSIONS,
-      questions: [legacyQuestion],
-      transcript: 'x',
-    });
-
-    expect(legacyQuestion).toMatchObject({ source: 'resume', evidence: '' });
-    expect(prompt).not.toContain('Category:');
-    expect(prompt).not.toContain('Source:');
-    expect(prompt).not.toContain('Evidence:');
-  });
-
-  it('system prompt 明确要求不给总分、且未作答的题不计入维度分', () => {
-    const { system } = buildEvaluationPrompt({
+  it('只评本块的题：没传进来的题不会出现在 prompt 里', () => {
+    const { prompt } = buildQuestionEvaluationPrompt({
       jobTitle: 'T',
       jobDescription: 'JD',
       resumeText: 'R',
@@ -406,54 +368,11 @@ describe('buildEvaluationPrompt', () => {
       questions,
       transcript: 'x',
     });
-    expect(system).toContain('answered');
-    // 总分由服务端算，prompt 里不能让模型给 overallScore
-    expect(system).not.toContain('overallScore');
+    expect(prompt).not.toContain('q2');
   });
 
-  it('填了答案的题，把答案写进 prompt', () => {
-    const withAnswer: InterviewQuestion[] = [
-      { ...questions[0], id: 'q1', answer: '双十一订单页白屏，先看监控发现接口 500' },
-    ];
-    const { prompt } = buildEvaluationPrompt({
-      jobTitle: 'T',
-      jobDescription: 'JD',
-      resumeText: 'R',
-      dimensions: DIMENSIONS,
-      questions: withAnswer,
-      transcript: '整段记录',
-    });
-    expect(prompt).toContain('双十一订单页白屏，先看监控发现接口 500');
-    expect(prompt).toContain('recorded answer');
-  });
-
-  it('没填答案的题不出现 recorded answer 行', () => {
-    const { prompt } = buildEvaluationPrompt({
-      jobTitle: 'T',
-      jobDescription: 'JD',
-      resumeText: 'R',
-      dimensions: DIMENSIONS,
-      questions,
-      transcript: '整段记录',
-    });
-    expect(prompt).not.toContain('recorded answer');
-  });
-
-  it('空白答案视同没填', () => {
-    const blank: InterviewQuestion[] = [{ ...questions[0], answer: '   ' }];
-    const { prompt } = buildEvaluationPrompt({
-      jobTitle: 'T',
-      jobDescription: 'JD',
-      resumeText: 'R',
-      dimensions: DIMENSIONS,
-      questions: blank,
-      transcript: '整段记录',
-    });
-    expect(prompt).not.toContain('recorded answer');
-  });
-
-  it('system prompt 说明有答案的题不要再去记录里找', () => {
-    const { system } = buildEvaluationPrompt({
+  it('system 要求档位 + 档位内分，且禁止产出维度分与总分', () => {
+    const { system } = buildQuestionEvaluationPrompt({
       jobTitle: 'T',
       jobDescription: 'JD',
       resumeText: 'R',
@@ -461,75 +380,73 @@ describe('buildEvaluationPrompt', () => {
       questions,
       transcript: 'x',
     });
-    expect(system).toContain('recorded answer');
-    expect(system).toContain('do not search the transcript');
-    expect(system).toContain('3-5 substantive advantages');
-    expect(system).toContain('3-5 substantive weaknesses or risks');
-    expect(system).toContain('600-1000 Chinese');
-    expect(system).toContain('match against the JD');
-    expect(system).toContain('Distinguish "not demonstrated" from "cannot do"');
+    expect(system).toContain('excellent → 85-100');
+    expect(system).toContain('Do NOT return dimension scores or an aggregate score');
+    // 招聘视角的称呼与人口属性标签都不许出现
+    expect(system).toContain('候选人');
+    expect(system).toContain('“本轮未验证”');
   });
 
-  it('评价采用 HR 内部决策口径并禁止称呼、身份化和证据外推', () => {
-    const { system, prompt } = buildEvaluationPrompt({
-      jobTitle: 'AI 实习生',
-      jobDescription: '负责 Python CLI 与 Agent 工程化',
-      resumeText: '参与 RAG 项目',
-      dimensions: [
-        ...DIMENSIONS,
-        { key: 'communication', label: '沟通协作', weight: 2, layer: 'family', custom: false },
-      ],
-      questions,
+  it('客观题的参考答案进 prompt，供打分时对照；开放题不留空行', () => {
+    const withAnswer = buildQuestionEvaluationPrompt({
+      jobTitle: 'T',
+      jobDescription: 'JD',
+      resumeText: 'R',
+      dimensions: DIMENSIONS,
+      questions: [{ ...questions[0], referenceAnswer: 'MVCC 靠 undo log 和 read view' }],
       transcript: 'x',
     });
+    expect(withAnswer.prompt).toContain('Reference answer: MVCC 靠 undo log 和 read view');
 
-    expect(system).toContain('internal hiring decision memo for HR');
-    expect(system).toContain('Never use the candidate name');
-    expect(system).toContain('Do not use demographic or identity labels');
-    expect(system).toContain('本轮未验证');
-    expect(system).toContain('岗位匹配');
-    expect(system).toContain('已验证能力');
-    expect(system).toContain('主要风险');
-    expect(system).toContain('录用建议');
-    expect(prompt).toContain('Interview coverage: 1 questions across 1 of 3 configured dimensions');
+    const empty = buildQuestionEvaluationPrompt({
+      jobTitle: 'T',
+      jobDescription: 'JD',
+      resumeText: 'R',
+      dimensions: DIMENSIONS,
+      questions: [{ ...questions[0], referenceAnswer: '  ' }],
+      transcript: 'x',
+    });
+    expect(empty.prompt).not.toContain('Reference answer:');
   });
 });
 
-describe('buildEvaluationPrompt 与参考答案', () => {
-  const q: InterviewQuestion = {
-    id: 'q1',
-    dimension: 'logic',
-    question: '题干',
-    intent: '意图',
-    rubric: { excellent: 'a', pass: 'b', fail: 'c' },
-    followUps: [],
-    referencePoints: [],
-    estimatedMinutes: 5,
-    difficulty: 'medium',
-  };
-
-  it('客观题的参考答案进 prompt，供打分时对照', () => {
-    const { prompt } = buildEvaluationPrompt({
+describe('buildPerspectiveSummaryPrompt', () => {
+  it('只吃维度分与逐题结论，不重读全文', () => {
+    const { prompt, system } = buildPerspectiveSummaryPrompt({
       jobTitle: 'T',
       jobDescription: 'JD',
-      resumeText: 'R',
-      dimensions: DIMENSIONS,
-      questions: [{ ...q, referenceAnswer: 'MVCC 靠 undo log 和 read view' }],
-      transcript: 'x',
+      dimensionScores: [{ label: '沟通表达', score: 78, weight: 1 }],
+      overallScore: 76,
+      questionSummaries: [{
+        question: '讲一个线上问题',
+        answered: true,
+        tier: 'pass',
+        score: 78,
+        weaknesses: ['没给出指标'],
+      }],
     });
-    expect(prompt).toContain('Reference answer: MVCC 靠 undo log 和 read view');
+
+    expect(prompt).toContain('沟通表达: 78');
+    expect(prompt).toContain('Overall score: 76');
+    expect(prompt).toContain('没给出指标');
+    expect(prompt).not.toContain('Interview transcript');
+    expect(system).toContain('You do NOT get the raw transcript');
+    expect(system).toContain('strong_hire, hire, hold, no_hire');
   });
 
-  it('开放题没有参考答案时不留空行', () => {
-    const { prompt } = buildEvaluationPrompt({
+  it('未作答的题在汇总里明确标注', () => {
+    const { prompt } = buildPerspectiveSummaryPrompt({
       jobTitle: 'T',
       jobDescription: 'JD',
-      resumeText: 'R',
-      dimensions: DIMENSIONS,
-      questions: [{ ...q, referenceAnswer: '  ' }],
-      transcript: 'x',
+      dimensionScores: [],
+      overallScore: 0,
+      questionSummaries: [{
+        question: '没答的题',
+        answered: false,
+        weaknesses: [],
+      }],
     });
-    expect(prompt).not.toContain('Reference answer:');
+    expect(prompt).toContain('未作答');
   });
 });
 

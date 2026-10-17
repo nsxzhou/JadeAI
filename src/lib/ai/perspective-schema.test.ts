@@ -187,10 +187,16 @@ describe('evaluationOutputSchema', () => {
 });
 
 describe('dimensionsSchema', () => {
-  const ok = { key: 'logic', label: '逻辑思维', weight: 2, custom: false };
+  const ok = { key: 'general_logic', label: '逻辑思维', layer: 'general' as const, weight: 1, custom: false };
 
   it('接受合法的维度配置', () => {
     expect(dimensionsSchema.safeParse([ok]).success).toBe(true);
+  });
+
+  it('拒绝缺少 layer 的维度配置（两层坐标必须显式）', () => {
+    const { layer, ...withoutLayer } = ok;
+    expect(layer).toBe('general');
+    expect(dimensionsSchema.safeParse([withoutLayer]).success).toBe(false);
   });
 
   it('拒绝空数组', () => {

@@ -1,4 +1,8 @@
 import type { FollowUp, InterviewQuestion, InterviewQuestionStatus } from '@/types/perspective';
+import { interviewQuestionCategorySchema } from '@/lib/interview-core/types';
+
+/** 题型目录的唯一来源在内核；这里只做「不认识的题型就别往下传」的兜底。 */
+const KNOWN_CATEGORIES = new Set<string>(interviewQuestionCategorySchema.options);
 
 function normalizeQuestionStatus(q: InterviewQuestion): InterviewQuestionStatus {
   if (q.status === 'pending' || q.status === 'answered' || q.status === 'skipped') {
@@ -40,17 +44,7 @@ export function normalizeFollowUps(raw: unknown): FollowUp[] {
 
 /** 单道题的规整。只碰会变形的字段，其余原样带过。 */
 export function normalizeQuestion(q: InterviewQuestion): InterviewQuestion {
-  const category = [
-    'go_fundamentals',
-    'backend_fundamentals',
-    'middleware_database',
-    'project_deep_dive',
-    'system_scenario',
-    'communication_pressure',
-    'hr_motivation',
-  ].includes(q.category ?? '')
-    ? q.category
-    : 'project_deep_dive';
+  const category = KNOWN_CATEGORIES.has(q.category ?? '') ? q.category : 'project_deep_dive';
   const source = ['resume', 'jd', 'gap'].includes(q.source ?? '') ? q.source : 'resume';
 
   return {

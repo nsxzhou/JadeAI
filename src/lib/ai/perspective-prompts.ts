@@ -1,5 +1,5 @@
 import { resolveDimensionGuide } from '@/lib/interview-core/dimension';
-import { detectGoRole } from '@/lib/ai/perspective-blueprint';
+import { ROLE_FAMILIES, isGoRole, normalizeRoleFamily, resolveRoleFamily } from '@/lib/interview-core/role-family';
 import { allocateQuestions } from '@/lib/perspective/scoring';
 import type {
   DimensionConfig,
@@ -110,47 +110,51 @@ Return JSON with this exact shape:
 
 ${JSON_RULE}`;
 
-const EVALUATION_SYSTEM = `You are a seasoned hiring interviewer writing an internal hiring decision memo for HR. You are given the JD, the resume, the question set (with rubrics), and the raw interview transcript.
+const QUESTION_EVALUATION_SYSTEM = `You score interview answers one question at a time. You are given the JD, the résumé, the configured scoring dimensions, a subset of questions (with rubrics), and the raw interview record.
 
 ${LANGUAGE_RULE}
 
 Rules:
-- Some questions include a "Candidate's recorded answer" line. For those, score that recorded answer directly — do not search the transcript for them, and always set "answered" to true.
-- For each question, locate the candidate's answer in the transcript. Summarize it in "answerSummary".
-- If a question was never asked or never answered, set "answered" to false and "score" to 0. Do NOT invent an answer.
-- A JD-sourced question's premise, reference answer, or hypothetical reasoning is not evidence of prior experience. A gap-sourced question's premise, reference answer, or hypothetical reasoning is not evidence of prior experience. An explicit concrete prior-work account in the candidate's recorded answer or transcript may be treated as interview evidence and assessed for specificity and credibility; do not upgrade mere hypotheticals into experience.
-- Score each question 0-100 against its rubric.
-- Do NOT output dimension scores or an aggregate score. The caller derives each dimension from the per-question scores (weighted by the configured dimensions) and total from those.
-- "recommendation" is one of: strong_hire, hire, hold, no_hire. Base it on the whole picture, not just the numbers.
-- Explicitly match against the JD must-haves; bonus skills cannot compensate for an unverified must-have.
-- This is an internal evidence memo, not feedback addressed to the interviewee. Never use the candidate name,
-  greetings, second-person address, or repeated labels such as “候选人/该候选人”. Write findings directly
-  and impersonally: “已展示…”, “回答显示…”, “本轮未验证…”.
-- Do not use demographic or identity labels (student status, age, gender, school tier, marital/family status)
-  unless the JD contains a lawful, job-essential requirement and the interview produced directly relevant evidence.
-  Never use personality-laden wording such as “稚嫩”, “聪明”, “老实”, “有灵性”, or “气场不足”.
-- Evidence boundary: a résumé claim is context, not verified evidence. Use the interview answers to confirm it.
-  A missing answer means “本轮未验证”, not “不会/缺乏/能力差”. Do not infer collaboration, learning ability,
-  ownership, stability, or engineering maturity from unrelated technical answers.
-- Coverage guardrail: if fewer than 5 substantive questions were assessed, or fewer than half of configured
-  dimensions have answered evidence, force recommendation="hold". State that evidence is insufficient and list
-  exactly what a follow-up interview must verify; do not produce a confident hire/no-hire conclusion.
-- "strengths": 3-5 substantive advantages. Each item must contain (1) a clear competency conclusion,
-  (2) concrete evidence from a specific recorded answer/transcript detail, and (3) why that evidence matters
-  for this JD. Do not write generic praise or repeat dimension scores.
-- "concerns": 3-5 substantive weaknesses or risks. Each item must contain (1) the observed gap,
-  (2) concrete answer evidence or an explicit lack of evidence, (3) its likely impact on this JD, and
-  (4) what should be verified next. Distinguish "not demonstrated" from "cannot do".
-- "overallComment": write a detailed, decision-useful Chinese assessment of roughly 600-1000 Chinese
-  characters (or equivalent detail in the JD language). Use exactly these four paragraph labels, each followed
-  by evidence-based prose: “岗位匹配：”, “已验证能力：”, “主要风险：”, “录用建议：”. For every conclusion,
-  cite the question/answer evidence that supports it. Put unassessed must-haves under “主要风险” as “本轮未验证”
-  with a proposed verification method. Do not restate the résumé, JD, score, strengths list, or concerns list.
-- "recommendationReason": 100-200 Chinese characters (or equivalent), explicitly connecting the recommendation
-  to must-have JD coverage, strongest evidence, and the most important unresolved risk.
+- Score ONLY the questions listed in the user message. Never add, merge or omit one.
+- Some questions include a "Recorded answer" line. Use it as the answer for that question; do not look for it in the transcript.
+- If a question has no answer in the record, set "answered" to false and "score" to 0. Do NOT invent an answer.
+- A JD-sourced or gap-sourced premise, reference answer or hypothetical reasoning is NOT evidence of prior experience.
+- For each answered question return "tier" plus an in-tier "score":
+  excellent → 85-100, pass → 60-84, fail → 0-59. The server clamps the score into the tier range;
+  keep your number inside it anyway.
+- Do NOT return dimension scores or an aggregate score. The caller aggregates both from the per-question scores.
+- Write findings impersonally: “已展示…”, “回答显示…”, “本轮未验证…”. Never use the person's name, second-person
+  address, or labels such as “候选人/该候选人”.
+- Do not use demographic or identity labels (age, gender, school tier, marital status, student status) or
+  personality-laden wording such as “聪明”, “老实”, “气场不足”.
+- A missing answer means “本轮未验证”, not “不会/缺乏/能力差”. Do not infer collaboration, ownership or learning
+  ability from unrelated technical answers.
+- "highlights" and "weaknesses": 1-3 items each, every one tied to a concrete detail of the answer. A weakness
+  must say what would have made the answer stronger.
 
 Return JSON with this exact shape:
-{"questionEvaluations":[{"questionId":"","answerSummary":"","answered":true,"score":0,"highlights":[],"weaknesses":[]}],"strengths":[],"concerns":[],"overallComment":"","recommendation":"hold","recommendationReason":""}
+{"questionEvaluations":[{"questionId":"","answered":true,"tier":"pass","score":70,"answerSummary":"","highlights":[],"weaknesses":[]}]}
+
+${JSON_RULE}`;
+
+const PERSPECTIVE_SUMMARY_SYSTEM = `You turn per-question interview evidence into a prediction memo. You get the JD, the server-computed dimension scores, the overall score, and one line per question (score, tier, weaknesses). You do NOT get the raw transcript — do not ask for it and do not invent details beyond the evidence given.
+
+${LANGUAGE_RULE}
+
+Rules:
+- "recommendation" is one of: strong_hire, hire, hold, no_hire. It answers “按这份简历会不会过”, not “要不要录用”.
+- Never use the person's name, second-person address, or labels such as “候选人/该候选人”. Write impersonally.
+- No demographic or identity labels; no personality-laden wording.
+- Unverified JD must-haves belong in "concerns" as “本轮未验证”, together with how to verify them next.
+- "strengths": 3-5 items. Each = conclusion + the specific answer evidence + why it matters for this JD.
+- "concerns": 3-5 items. Each = the gap + evidence (or an explicit lack of it) + likely impact + what to verify next.
+- "overallComment": 200-400 Chinese characters (or equivalent), with four labelled paragraphs:
+  “岗位匹配：”, “已验证能力：”, “主要风险：”, “判决预测：”. Cite the question evidence behind every conclusion.
+- "recommendationReason": 100-200 Chinese characters linking the recommendation to must-have coverage,
+  the strongest evidence and the biggest unresolved risk.
+
+Return JSON with this exact shape:
+{"strengths":[],"concerns":[],"overallComment":"","recommendation":"hold","recommendationReason":""}
 
 ${JSON_RULE}`;
 
@@ -166,7 +170,7 @@ export interface QuestionsPromptInput {
    * 权重分配做不到这一点。
    */
   questionCounts?: Record<string, number>;
-  /** 该岗位族允许的题型；缺省用旧的 7 类清单（面试官视角的历史行为） */
+  /** 该岗位族允许的题型；缺省用旧的 7 类清单（没有岗位族的历史数据） */
   allowedCategories?: string[];
   /** 该岗位族必考题型及最少题数；缺省用旧的 Go 清单 */
   requiredCategoryMinimums?: Array<{ category: string; min: number }>;
@@ -174,7 +178,7 @@ export interface QuestionsPromptInput {
   roleFamilyKey?: string;
 }
 
-/** 旧目录的题型清单，面试官视角仍按它出题。 */
+/** 没有岗位族时的题型清单（历史数据兜底）。 */
 const LEGACY_ALLOWED_CATEGORIES = [
   'go_fundamentals',
   'backend_fundamentals',
@@ -185,17 +189,35 @@ const LEGACY_ALLOWED_CATEGORIES = [
   'hr_motivation',
 ];
 
-function buildPortfolioRules(questionCount: number): string {
+/**
+ * 题型配比。
+ *
+ * 旧口径（没有岗位族时）把「技术基础 = go_fundamentals / backend_fundamentals /
+ * middleware_database」写死——前端族、数据族、测试族拿到这段话会被要求出后端题。
+ * 给定岗位族后改为不点名具体题型：族内必考项由 `requiredCategoryMinimums` 精确约束，
+ * 这里只约束「深挖 / 沟通压力 / 其余」三类占比。
+ */
+function buildPortfolioRules(questionCount: number, byFamily = false): string {
   const minimum = (share: number) => Math.max(1, Math.round(questionCount * share));
   const range = (lowerShare: number, upperShare: number) => {
     const lower = minimum(lowerShare);
     return [lower, Math.max(lower, Math.floor(questionCount * upperShare))] as const;
   };
 
-  const foundations = Math.max(1, Math.ceil(questionCount * 0.3));
   const [projectMinimum, projectMaximum] = range(0.2, 0.3);
-  const [scenarioMinimum, scenarioMaximum] = range(0.15, 0.25);
   const [communicationMinimum, communicationMaximum] = range(0.15, 0.25);
+
+  if (byFamily) {
+    const [scenarioMinimum, scenarioMaximum] = range(0.15, 0.25);
+    return `Portfolio coverage — count-aware integer targets for this role family:
+- Stay strictly inside the allowed category list. The family's core categories must carry the majority of slots.
+- Project deep-dives: ${projectMinimum}–${projectMaximum} slots (20–30%).
+- Applied scenarios / failure handling: ${scenarioMinimum}–${scenarioMaximum} slots (15–25%).
+- Communication, pressure and HR: ${communicationMinimum}–${communicationMaximum} slots (15–25%).`;
+  }
+
+  const foundations = Math.max(1, Math.ceil(questionCount * 0.3));
+  const [scenarioMinimum, scenarioMaximum] = range(0.15, 0.25);
 
   return `Portfolio coverage — use these count-aware, feasible integer equivalents of the percentage targets:
 - Technical foundations (go_fundamentals, backend_fundamentals, middleware_database): at least ${foundations} slots (≥30%).
@@ -215,13 +237,18 @@ export function buildInterviewBlueprintPrompt(input: QuestionsPromptInput): {
       return `- ${dimension.label} (key: ${dimension.key}, weight: ${dimension.weight}, exactly ${allocation[dimension.key] ?? 0} slots)\n  Description: ${description}`;
     })
     .join('\n');
-  const isGoRole = detectGoRole(input.jobTitle, input.jobDescription);
-  const goMinimum = isGoRole && input.questionCount >= 8
+  const legacyFamily = resolveRoleFamily({
+    roleFamilyKey: input.roleFamilyKey,
+    jobTitle: input.jobTitle,
+    jobDescription: input.jobDescription,
+  });
+  const goRole = isGoRole(legacyFamily.roleFamily, legacyFamily.primaryStack);
+  const goMinimum = goRole && input.questionCount >= 8
     ? 'The server classified this as a Go-specific role. Include at least 2 go_fundamentals slots.'
-    : isGoRole
+    : goRole
       ? 'The server classified this as a Go-specific role. Include go_fundamentals only where the small slot count allows.'
       : 'The server classified this as a non-Go role. Do not use go_fundamentals.';
-  const requiredGoPortfolio = isGoRole && input.questionCount >= 8
+  const requiredGoPortfolio = goRole && input.questionCount >= 8
     ? `Required Go interview portfolio:
 - at least 1 middleware_database slot
 - at least 1 project_deep_dive slot
@@ -235,7 +262,10 @@ export function buildInterviewBlueprintPrompt(input: QuestionsPromptInput): {
   const roleLine = input.roleFamilyKey
     ? `The server classified this as a ${input.roleFamilyKey} role.`
     : goMinimum;
-  const allowedCategoryLine = (input.allowedCategories ?? LEGACY_ALLOWED_CATEGORIES).join(', ');
+  const allowedCategoryLine = (input.allowedCategories
+    ?? (input.roleFamilyKey
+      ? ROLE_FAMILIES[normalizeRoleFamily(input.roleFamilyKey)].allowedCategories
+      : LEGACY_ALLOWED_CATEGORIES)).join(', ');
   const portfolioRequirement = input.requiredCategoryMinimums
     ? input.requiredCategoryMinimums
       .map((entry) => `- at least ${entry.min} ${entry.category} slot${entry.min > 1 ? 's' : ''}`)
@@ -245,7 +275,7 @@ export function buildInterviewBlueprintPrompt(input: QuestionsPromptInput): {
     ? (input.requiredCategoryMinimums ? `Required interview portfolio:\n${portfolioRequirement}` : portfolioRequirement)
     : '';
 
-  const portfolioRules = buildPortfolioRules(input.questionCount);
+  const portfolioRules = buildPortfolioRules(input.questionCount, Boolean(input.roleFamilyKey));
   const maxResume = Math.floor(input.questionCount * 0.4);
   const minJd = Math.ceil(input.questionCount * 0.35);
   const minGap = Math.max(2, Math.ceil(input.questionCount * 0.15));
@@ -387,53 +417,57 @@ Respond with JSON only.`;
   return { system: SLOT_QUESTIONS_SYSTEM, prompt };
 }
 
-export interface EvaluationPromptInput {
+/** 一道题进 prompt 的渲染。两种评估段（逐题 / 汇总）不再共用它，但来源一致。 */
+function renderQuestionBlock(question: InterviewQuestion, index: number): string {
+  const evidence = question.evidence?.trim();
+  const metadata = evidence
+    ? [
+        question.category ? `Category: ${question.category}` : '',
+        question.source ? `Source: ${question.source}` : '',
+        `Evidence: ${evidence}`,
+      ].filter(Boolean)
+    : [];
+  const base = `${index + 1}. [id: ${question.id}] [dimension: ${question.dimension}]
+Question: ${question.question}
+${metadata.length ? `${metadata.join('\n')}\n` : ''}What it probes: ${question.intent}
+Excellent answer: ${question.rubric.excellent}
+Passing answer: ${question.rubric.pass}
+Failing answer: ${question.rubric.fail}
+Reference points: ${question.referencePoints.join('; ')}${
+    question.redFlags?.length ? `\nRed flags: ${question.redFlags.join('; ')}` : ''
+  }${
+    // 客观题带了参考答案，拿它当基准比只看 rubric 判得准
+    question.referenceAnswer?.trim() ? `\nReference answer: ${question.referenceAnswer.trim()}` : ''
+  }`;
+
+  // 面试中逐题记下来的答案是确定的，直接给模型，省得它从整段速记里
+  // 猜哪句对应哪题——那正是归错题的来源。
+  const answer = question.answer?.trim();
+  return answer ? `${base}\nRecorded answer: ${answer}` : base;
+}
+
+export interface QuestionEvaluationPromptInput {
   jobTitle: string;
   jobDescription: string;
   resumeText: string;
+  /** 全部配置维度，仅用于告诉模型这些题的评分坐标 */
   dimensions: DimensionConfig[];
+  /** 本块要评的题（一次 5 道左右） */
   questions: InterviewQuestion[];
   transcript: string;
 }
 
-export function buildEvaluationPrompt(input: EvaluationPromptInput): {
+/**
+ * 逐题评估段：只评这一块里的题，不产出维度分与总分。
+ *
+ * 分块的意义是可续：单块失败只重试这一块，已评的题不会重跑。
+ */
+export function buildQuestionEvaluationPrompt(input: QuestionEvaluationPromptInput): {
   system: string;
   prompt: string;
 } {
-  const questionBlocks = input.questions
-    .map((q, i) => {
-      const evidence = q.evidence?.trim();
-      const metadata = evidence
-        ? [
-            q.category ? `Category: ${q.category}` : '',
-            q.source ? `Source: ${q.source}` : '',
-            `Evidence: ${evidence}`,
-          ].filter(Boolean)
-        : [];
-      const base = `${i + 1}. [id: ${q.id}] [dimension: ${q.dimension}]
-Question: ${q.question}
-${metadata.length ? `${metadata.join('\n')}\n` : ''}What it probes: ${q.intent}
-Excellent answer: ${q.rubric.excellent}
-Passing answer: ${q.rubric.pass}
-Failing answer: ${q.rubric.fail}
-Reference points: ${q.referencePoints.join('; ')}${
-        q.redFlags?.length ? `\nRed flags: ${q.redFlags.join('; ')}` : ''
-      }${
-        // 客观题带了参考答案，拿它当基准比只看 rubric 判得准
-        q.referenceAnswer?.trim() ? `\nReference answer: ${q.referenceAnswer.trim()}` : ''
-      }`;
-
-      // 面试中逐题记下来的答案是确定的，直接给模型，省得它从整段速记里
-      // 猜哪句对应哪题——那正是归错题的来源。
-      const answer = q.answer?.trim();
-      return answer ? `${base}\nCandidate's recorded answer: ${answer}` : base;
-    })
-    .join('\n\n');
-
-  const dimensionLines = input.dimensions
-    .map((d) => `- ${d.label} (key: ${d.key})`)
-    .join('\n');
-  const assessedDimensionCount = new Set(input.questions.map((q) => q.dimension)).size;
+  const questionBlocks = input.questions.map(renderQuestionBlock).join('\n\n');
+  const dimensionLines = input.dimensions.map((dimension) => `- ${dimension.label} (key: ${dimension.key})`).join('\n');
 
   const prompt = `Job title: ${input.jobTitle}
 
@@ -443,18 +477,64 @@ ${input.jobDescription}
 Candidate resume:
 ${input.resumeText}
 
-Dimensions to score:
+Scoring dimensions (context only — do not score dimensions):
 ${dimensionLines}
 
-Interview coverage: ${input.questions.length} questions across ${assessedDimensionCount} of ${input.dimensions.length} configured dimensions.
-
-Question set:
+Questions to score now (${input.questions.length}):
 ${questionBlocks}
 
-Interview transcript:
-${input.transcript}
+Interview record:
+${input.transcript || '(empty)'}
 
 Respond with JSON only.`;
 
-  return { system: EVALUATION_SYSTEM, prompt };
+  return { system: QUESTION_EVALUATION_SYSTEM, prompt };
+}
+
+export interface PerspectiveSummaryPromptInput {
+  jobTitle: string;
+  jobDescription: string;
+  dimensionScores: Array<{ label: string; score: number; weight: number }>;
+  overallScore: number;
+  questionSummaries: Array<{
+    question: string;
+    answered: boolean;
+    tier?: string | null;
+    score?: number | null;
+    weaknesses: string[];
+  }>;
+}
+
+/** 汇总段：只吃维度分与各题结论，不重读全文。 */
+export function buildPerspectiveSummaryPrompt(input: PerspectiveSummaryPromptInput): {
+  system: string;
+  prompt: string;
+} {
+  const dimensionLines = input.dimensionScores
+    .map((dimension) => `- ${dimension.label}: ${dimension.score} (weight ${dimension.weight})`)
+    .join('\n');
+  const questionLines = input.questionSummaries
+    .map((item, index) => {
+      const score = item.answered ? `${item.score ?? 0} / ${item.tier ?? 'pass'}` : '未作答';
+      const weaknesses = item.weaknesses.length ? `；薄弱：${item.weaknesses.join('；')}` : '';
+      return `${index + 1}. ${item.question} — ${score}${weaknesses}`;
+    })
+    .join('\n');
+
+  const prompt = `Job title: ${input.jobTitle}
+
+Job description:
+${input.jobDescription}
+
+Dimension scores (computed by the server from per-question scores):
+${dimensionLines || '(none)'}
+
+Overall score: ${input.overallScore}
+
+Per-question evidence:
+${questionLines || '(none)'}
+
+Respond with JSON only.`;
+
+  return { system: PERSPECTIVE_SUMMARY_SYSTEM, prompt };
 }

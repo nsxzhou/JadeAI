@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import { QUESTION_COUNT_MAX, QUESTION_COUNT_MIN } from '@/types/perspective';
+import { QUESTION_COUNT_PER_DIMENSION_MAX } from '@/types/perspective';
 import { interviewQuestionCategorySchema } from '@/lib/interview-core/types';
 
 // ── 通用容错工具 ──────────────────────────────────────────────────────────────
@@ -20,10 +20,7 @@ const score0to100 = z
 export const dimensionConfigSchema = z.object({
   key: z.string().min(1),
   label: z.string().min(1),
-  // 过渡期：客户端还没传 layer 时按族层处理；阶段 3/5 会改成必填。
-  layer: z
-    .union([z.enum(['general', 'family']), z.null(), z.undefined()])
-    .transform((v) => v ?? 'family'),
+  layer: z.enum(['general', 'family']),
   weight: z.number().int().positive(),
   custom: z.boolean(),
   // 加这个字段之前建的岗位，库里那条 JSON 没有 description。
@@ -43,18 +40,35 @@ export const dimensionsSchema = z
     { message: '考察维度不能重复' },
   );
 
+/**
+ * 逐维度题数。评分权重（`weight`）与题数彻底分开：这里只放「这一维出几道题」。
+ * 总数区间与通用层覆盖由 `validateQuestionCounts` 在服务端校验。
+ */
+export const questionCountsSchema = z.record(
+  z.string().min(1),
+  z.number().int().min(0).max(QUESTION_COUNT_PER_DIMENSION_MAX),
+);
+
+const jobCoordinatesSchema = {
+  roleFamilyKey: z.enum(['backend', 'frontend', 'data_algo', 'qa_infra', 'other']),
+  primaryStack: z.enum(['go', 'java', 'python', 'node', 'none']),
+};
+
 export const createJobInputSchema = z.object({
   title: z.string().min(1).max(100),
   jobDescription: z.string().min(1),
+  ...jobCoordinatesSchema,
   dimensions: dimensionsSchema,
-  questionCount: z.number().int().min(QUESTION_COUNT_MIN).max(QUESTION_COUNT_MAX),
+  questionCounts: questionCountsSchema,
 });
 
 export const updateJobInputSchema = z.object({
   title: z.string().min(1).max(100).optional(),
   jobDescription: z.string().min(1).optional(),
+  roleFamilyKey: jobCoordinatesSchema.roleFamilyKey.optional(),
+  primaryStack: jobCoordinatesSchema.primaryStack.optional(),
   dimensions: dimensionsSchema.optional(),
-  questionCount: z.number().int().min(QUESTION_COUNT_MIN).max(QUESTION_COUNT_MAX).optional(),
+  questionCounts: questionCountsSchema.optional(),
 });
 
 export const createCandidateInputSchema = z.object({
@@ -93,8 +107,9 @@ export const interviewBlueprintOutputSchema = z.object({
 
 export const dimensionSuggestionsOutputSchema = z.object({
   dimensions: z.array(z.object({
-    key: interviewQuestionCategorySchema,
-    weight: z.number().int().min(1).max(5),
+    key: z.string().min(1),
+    /** 该维度生成几道题（1–5）；评分权重由目录决定，模型不参预 */
+    questionCount: z.number().int().min(1).max(QUESTION_COUNT_PER_DIMENSION_MAX),
     description: z.string().min(200).max(1600),
   }).strict()),
 }).strict();
@@ -168,6 +183,40 @@ const recommendationSchema = z
     v === 'strong_hire' || v === 'hire' || v === 'hold' || v === 'no_hire' ? v : 'hold',
   );
 
+/**
+ * 单题分链路：AI 只给档位 + 档位内分，服务端 `clampScoreToTier` 落定。
+ *
+ * 强 schema：关键字段缺失就报错，不再「全字段 `.default()`」——那样形状错但合法的
+ * 返回值会静默变成一条 0 分评估，正是「报告骗人」的来源。
+ */
+export const questionChunkEvaluationSchema = z.object({
+  questionEvaluations: z.array(
+    z.object({
+      questionId: z.string().min(1),
+      answered: z.boolean(),
+      tier: z.enum(['excellent', 'pass', 'fail']),
+      score: z.number(),
+      answerSummary: z.string(),
+      highlights: z.array(z.string()),
+      weaknesses: z.array(z.string()),
+    }).strict(),
+  ).min(1),
+}).strict();
+
+export type QuestionChunkEvaluationOutput = z.infer<typeof questionChunkEvaluationSchema>;
+
+/** 全场汇总：只吃维度分与各题结论，不重读全文。 */
+export const perspectiveSummaryOutputSchema = z.object({
+  strengths: z.array(z.string()),
+  concerns: z.array(z.string()),
+  overallComment: z.string().min(1),
+  recommendation: recommendationSchema,
+  recommendationReason: z.string(),
+}).strict();
+
+export type PerspectiveSummaryOutput = z.infer<typeof perspectiveSummaryOutputSchema>;
+
+/** 旧的一次性评估输出。仅留给旧数据兼容与 `finalizeEvaluationForHr` 的入参形状。 */
 export const evaluationOutputSchema = z.object({
   questionEvaluations: z.array(
     z.object({

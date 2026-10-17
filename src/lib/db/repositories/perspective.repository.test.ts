@@ -23,7 +23,7 @@ vi.mock('../index', async () => {
 
 const { perspectiveRepository } = await import('./perspective.repository');
 const { db } = await import('../index');
-const { backfillLegacyQuestions } = await import('../backfill-questions');
+const { backfillPerspectiveCoordinates } = await import('../backfill-perspective-coordinates');
 const { users, perspectiveJobs, perspectiveCandidates, perspectiveEvaluations, interviewQuestions } = await import('../schema');
 
 const USER_ID = 'test-user-recruit';
@@ -215,91 +215,151 @@ describe('perspectiveRepository — evaluations', () => {
   });
 });
 
-describe('legacy question backfill', () => {
-  const LEGACY_QUESTIONS = [
-    {
-      id: 'legacy-q1',
-      dimension: 'project_deep_dive',
-      category: 'project_deep_dive' as const,
-      source: 'resume' as const,
-      evidence: '简历里的订单系统',
-      question: '讲讲你在订单系统里的角色',
-      intent: '看个人贡献',
-      rubric: { excellent: '有量化结果', pass: '说得清职责', fail: '只有团队视角' },
-      followUps: ['当时为什么选这个方案？', { purpose: '要细节', question: '指标怎么来的？', answer: '' }],
-      referencePoints: ['职责边界', '量化结果'],
-      referenceAnswer: '分点说明',
-      redFlags: ['全程用我们'],
-      estimatedMinutes: 8,
-      difficulty: 'hard' as const,
-      answer: '我是核心开发',
-      status: 'answered' as const,
-    },
-  ];
+describe('backsfill 旧坐标 → 两层坐标', () => {
+  it('旧岗位的 weight 变成题数，岗位族与栈被显式落库', async () => {
+    const job = await perspectiveRepository.createJob({
+      userId: USER_ID,
+      title: 'Go 后端工程师',
+      jobDescription: '负责 Go 微服务开发',
+      dimensions: [
+        { key: 'go_fundamentals', label: 'Go 基础', weight: 3, layer: 'family' as const, custom: false },
+        { key: 'hr_motivation', label: '求职动机', weight: 2, layer: 'family' as const, custom: false },
+      ],
+      questionCount: 5,
+    });
 
-  it('把 JSON 题目迁成行且字段无损，迁完把 JSON 列置空', async () => {
-    const job = await createJob();
-    const candidate = await perspectiveRepository.createCandidate({ jobId: job.id, name: '迁移对象' });
+    const result = await backfillPerspectiveCoordinates(db);
+    expect(result.jobs).toBe(1);
 
-    // 直接写 JSON 列，模拟翻转之前的数据
-    await db
-      .update(perspectiveCandidates)
-      .set({ questions: LEGACY_QUESTIONS } as any)
-      .where(eq(perspectiveCandidates.id, candidate!.id));
+    const row = (await db.select().from(perspectiveJobs).where(eq(perspectiveJobs.id, job!.id)))[0];
+    expect(row.roleFamilyKey).toBe('backend');
+    expect(row.primaryStack).toBe('go');
+    const counts = row.questionCounts as Record<string, number>;
+    expect(counts.go_fundamentals).toBe(3);
+    // 求职动机没有独立评分坐标：题数归并到沟通表达
+    expect(counts.general_communication).toBeGreaterThanOrEqual(2);
+    expect(row.questionCount).toBe(Object.values(counts).reduce((sum, n) => sum + n, 0));
+    // 旧 key 不再留在 dimensions 里
+    const keys = (row.dimensions as Array<{ key: string }>).map((dimension) => dimension.key);
+    expect(keys).not.toContain('hr_motivation');
+    expect(keys).toContain('general_communication');
+  });
 
-    const migrated = await backfillLegacyQuestions(db);
-    expect(migrated).toBe(1);
-
-    const rows = await db.select().from(interviewQuestions);
-    expect(rows).toHaveLength(1);
-    const row = rows[0] as Record<string, unknown>;
-    expect(row.id).toBe('legacy-q1');
-    expect(row.perspectiveCandidateId).toBe(candidate!.id);
-    expect(row.dimensionKey).toBe('project_deep_dive');
-    expect(row.category).toBe('project_deep_dive');
-    expect(row.source).toBe('resume');
-    expect(row.evidence).toBe('简历里的订单系统');
-    expect(row.estimatedMinutes).toBe(8);
-    expect(row.difficulty).toBe('hard');
-    expect(row.answer).toBe('我是核心开发');
-    expect(row.status).toBe('answered');
-    // 字符串形式的追问被补成对象，字段没丢
-    expect(row.followUps).toEqual([
-      { purpose: '', question: '当时为什么选这个方案？', answer: '' },
-      { purpose: '要细节', question: '指标怎么来的？', answer: '' },
+  it('存量题目的旧维度 key 被重映射，重复执行无变化', async () => {
+    const job = await perspectiveRepository.createJob({
+      userId: USER_ID,
+      title: '后端工程师',
+      jobDescription: '服务端开发',
+      dimensions: [{ key: 'go_fundamentals', label: 'Go 基础', weight: 2, layer: 'family' as const, custom: false }],
+      questionCount: 5,
+    });
+    const candidate = await perspectiveRepository.createCandidate({ jobId: job!.id, name: '题目归位' });
+    await perspectiveRepository.replaceQuestions(candidate!.id, [
+      {
+        dimension: 'hr_motivation',
+        question: '为什么选我们',
+        intent: '看动机',
+        rubric: { excellent: '', pass: '', fail: '' },
+        followUps: [],
+        referencePoints: [],
+        estimatedMinutes: 5,
+        difficulty: 'easy',
+      },
+      {
+        dimension: 'communication_pressure',
+        question: '被质疑时怎么办',
+        intent: '看抗压',
+        rubric: { excellent: '', pass: '', fail: '' },
+        followUps: [],
+        referencePoints: [],
+        estimatedMinutes: 5,
+        difficulty: 'easy',
+      },
     ]);
 
-    // JSON 列已清空，仓库改从 interview_questions 读回同样的题目
-    const reloaded = await perspectiveRepository.findCandidate(candidate!.id);
-    expect(reloaded!.questions).toHaveLength(1);
-    expect(reloaded!.questions![0].question).toBe('讲讲你在订单系统里的角色');
+    await backfillPerspectiveCoordinates(db);
+    const first = await perspectiveRepository.findQuestionsByCandidateId(candidate!.id);
+    expect(first.map((question) => question.dimension)).toEqual(['general_communication', 'general_stress']);
+
+    await backfillPerspectiveCoordinates(db);
+    const second = await perspectiveRepository.findQuestionsByCandidateId(candidate!.id);
+    expect(second.map((question) => question.dimension)).toEqual(first.map((question) => question.dimension));
   });
 
-  it('重复执行是幂等的，不会插出第二份', async () => {
-    const job = await createJob();
-    const candidate = await perspectiveRepository.createCandidate({ jobId: job.id, name: '幂等' });
-    await db
-      .update(perspectiveCandidates)
-      .set({ questions: LEGACY_QUESTIONS } as any)
-      .where(eq(perspectiveCandidates.id, candidate!.id));
-
-    await backfillLegacyQuestions(db);
-    await backfillLegacyQuestions(db);
-
-    expect(await db.select().from(interviewQuestions)).toHaveLength(1);
-  });
-
-  it('仓库写入题目走 interview_questions，而不是 JSON 列', async () => {
+  it('题目只写 interview_questions，不依赖已删除的 JSON 列', async () => {
     const job = await createJob();
     const candidate = await perspectiveRepository.createCandidate({ jobId: job.id, name: '写入' });
 
-    await perspectiveRepository.updateCandidate(candidate!.id, { questions: LEGACY_QUESTIONS as any });
+    await perspectiveRepository.updateCandidate(candidate!.id, {
+      questions: [{
+        dimension: 'project_deep_dive',
+        question: '讲讲你的项目',
+        intent: '看深度',
+        rubric: { excellent: '', pass: '', fail: '' },
+        followUps: [],
+        referencePoints: [],
+        estimatedMinutes: 5,
+        difficulty: 'medium',
+      }],
+    });
 
-    expect(await db.select().from(interviewQuestions)).toHaveLength(1);
-    const raw = await db
-      .select({ questions: perspectiveCandidates.questions })
-      .from(perspectiveCandidates)
-      .where(eq(perspectiveCandidates.id, candidate!.id));
-    expect(raw[0].questions).toBeNull();
+    const rows = await db.select().from(interviewQuestions);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].perspectiveCandidateId).toBe(candidate!.id);
+  });
+});
+
+describe('两段式评价的落库', () => {
+  it('逐题分写回 interview_questions，reset 清掉评价', async () => {
+    const job = await createJob();
+    const candidate = await perspectiveRepository.createCandidate({ jobId: job.id, name: '分块' });
+    await perspectiveRepository.replaceQuestions(candidate!.id, [{
+      id: 'q-1',
+      dimension: 'project_deep_dive',
+      question: '讲讲你的项目',
+      intent: '看深度',
+      rubric: { excellent: '', pass: '', fail: '' },
+      followUps: [],
+      referencePoints: [],
+      estimatedMinutes: 5,
+      difficulty: 'medium',
+    }]);
+
+    await perspectiveRepository.updateQuestionScore('q-1', { tier: 'pass', score: 72 });
+    const [scored] = await perspectiveRepository.findQuestionsByCandidateId(candidate!.id);
+    expect(scored.score).toBe(72);
+    expect(scored.tier).toBe('pass');
+
+    await perspectiveRepository.saveEvaluationChunk(candidate!.id, [{
+      questionId: 'q-1',
+      question: '讲讲你的项目',
+      answerSummary: '说清了个人贡献',
+      answered: true,
+      tier: 'pass',
+      score: 72,
+      highlights: ['有量化结果'],
+      weaknesses: ['没讲失败'],
+    }]);
+
+    const partial = await perspectiveRepository.findEvaluation(candidate!.id);
+    expect(partial!.status).toBe('partial');
+    expect((partial!.questionEvaluations as Array<{ questionId: string }>)).toHaveLength(1);
+
+    // 再存一块时按 questionId 合并，不覆盖前一块
+    await perspectiveRepository.saveEvaluationChunk(candidate!.id, [{
+      questionId: 'q-2',
+      question: '讲讲一次事故',
+      answerSummary: '定位过程清楚',
+      answered: true,
+      tier: 'excellent',
+      score: 90,
+      highlights: [],
+      weaknesses: [],
+    }]);
+    const merged = await perspectiveRepository.findEvaluation(candidate!.id);
+    expect((merged!.questionEvaluations as Array<{ questionId: string }>)).toHaveLength(2);
+
+    await perspectiveRepository.resetEvaluation(candidate!.id);
+    expect(await perspectiveRepository.findEvaluation(candidate!.id)).toBeNull();
   });
 });
