@@ -53,6 +53,12 @@ import { useFingerprint } from '@/hooks/use-fingerprint';
 import { getAIHeaders } from '@/stores/settings-store';
 import { sortCandidatesForSidebar } from '@/lib/perspective/summary';
 import { stageFromSummary, type CandidateStage } from '@/lib/perspective/candidate-stage';
+import { consumeQuestionGenerationStream } from '@/lib/perspective/generation-client';
+import {
+  generationProgressPercent,
+  type GenerationProgress,
+} from '@/lib/perspective/generation-progress';
+import { normalizeRoleFamily, resolveRoleFamily } from '@/lib/interview-core/role-family';
 import { cn } from '@/lib/utils';
 import type { CandidateSummary, DimensionConfig, RecruitJob } from '@/types/perspective';
 
@@ -77,6 +83,7 @@ export function CandidateList({ jobId }: { jobId: string }) {
   const [resumeFor, setResumeFor] = useState<CandidateSummary | null>(null);
   /** 正在就地出题的候选人 id */
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
+  const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
 
@@ -123,6 +130,7 @@ export function CandidateList({ jobId }: { jobId: string }) {
   /** 有简历但没题目：就地出题，完了直接进面试台 */
   async function handleGenerate(id: string) {
     setGeneratingFor(id);
+    setGenerationProgress(null);
     try {
       const res = await fetch(`/api/perspective/candidates/${id}/questions`, {
         method: 'POST',
@@ -131,11 +139,14 @@ export function CandidateList({ jobId }: { jobId: string }) {
           ...getAIHeaders(),
         },
       });
-      if (!res.ok) throw new Error('generate failed');
+      await consumeQuestionGenerationStream(res, setGenerationProgress);
       router.push(`/interview/perspective/${jobId}/c/${id}/stage`);
     } catch {
-      toast.error(t('errors.generateFailed'));
+      toast.error(t('errors.generateFailed'), {
+        description: t('errors.generateFailedHint'),
+      });
       setGeneratingFor(null);
+      setGenerationProgress(null);
     }
   }
 
@@ -203,6 +214,15 @@ export function CandidateList({ jobId }: { jobId: string }) {
   const dimensions = (job.dimensions as DimensionConfig[]).map((dimension) =>
     (dimension.custom ? dimension : { ...dimension, label: tDim(dimension.key) }));
 
+  // 「其他」岗位族不套用技术族维度。如果 JD 明显更像某个技术族，提示用户去重新识别，
+  // 否则他可能一直在用通用题面试一个前端/后端岗位。
+  const currentRole = normalizeRoleFamily(job.roleFamilyKey);
+  const suggestedRole = resolveRoleFamily({
+    jobTitle: job.title,
+    jobDescription: job.jobDescription,
+  }).roleFamily;
+  const roleMismatch = currentRole === 'other' && suggestedRole !== 'other';
+
   return (
     <div className="mx-auto max-w-7xl space-y-5">
       <div>
@@ -262,6 +282,23 @@ export function CandidateList({ jobId }: { jobId: string }) {
         </p>
       </div>
 
+      {roleMismatch && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-brand/30 bg-brand/5 px-3.5 py-2 text-xs text-brand dark:border-brand/40 dark:bg-brand/10">
+          <span>
+            {t('list.roleFamilyMismatch', {
+              family: t(`roleFamilies.${suggestedRole}`),
+            })}
+          </span>
+          <button
+            type="button"
+            onClick={() => setEditOpen(true)}
+            className="cursor-pointer font-medium underline underline-offset-2"
+          >
+            {t('list.fixRoleFamily')}
+          </button>
+        </div>
+      )}
+
       {jdExpanded && (
         <Card className="p-4">
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
@@ -297,6 +334,7 @@ export function CandidateList({ jobId }: { jobId: string }) {
             }}
             onGenerate={() => void handleGenerate(c.id)}
             generating={generatingFor === c.id}
+            progress={generatingFor === c.id ? generationProgress : null}
           />
         ))}
         {/* 末尾这张虚线卡是「只有一个候选人时页面不空」的关键 */}
@@ -415,6 +453,7 @@ function CandidateCard({
   onResume,
   onGenerate,
   generating,
+  progress,
 }: {
   jobId: string;
   candidate: CandidateSummary;
@@ -425,6 +464,8 @@ function CandidateCard({
   /** 有简历但没题目时就地出题 */
   onGenerate: () => void;
   generating: boolean;
+  /** 出题进度：父组件只在生成中的卡片上传入 */
+  progress: GenerationProgress | null;
 }) {
   const t = useTranslations('perspective');
   const tc = useTranslations('common');
@@ -439,8 +480,21 @@ function CandidateCard({
       ? t('actions.continueInterview', { done: c.answeredCount, total: c.questionCount })
       : t(`actions.${action.key}`);
 
-  const sub =
-    stage === 'done'
+  const progressText = progress
+    ? progress.phase === 'blueprint'
+      ? t('addFlow.phases.blueprint')
+      : progress.phase === 'quality'
+        ? t('addFlow.phases.quality')
+        : progress.phase === 'saving'
+          ? t('addFlow.phases.saving')
+          : t('questions.generatingProgress', {
+            done: progress.completed,
+            total: progress.total,
+          })
+    : t('questions.generating');
+  const sub = generating
+    ? progressText
+    : stage === 'done'
       ? c.recommendation && t(`recommendation.${c.recommendation}`)
       : stage === 'interviewing'
         ? t('questions.recorded', { done: c.answeredCount, total: c.questionCount })
@@ -448,9 +502,10 @@ function CandidateCard({
           ? t('list.noQuestions')
           : t('list.noResume');
 
-  // 面试中：色带长度就是进度。其余阶段铺满，色带只表明阶段。
-  const fill =
-    stage === 'interviewing' && c.questionCount > 0
+  // 出题中：色带长度就是整体进度。面试中同理；其余阶段铺满，色带只表明阶段。
+  const fill = generating
+    ? Math.max(4, generationProgressPercent(progress))
+    : stage === 'interviewing' && c.questionCount > 0
       ? Math.max(4, Math.round((c.answeredCount / c.questionCount) * 100))
       : 100;
 
@@ -523,7 +578,7 @@ function CandidateCard({
           ) : (
             <action.Icon className="h-3.5 w-3.5" />
           )}
-          {generating ? t('questions.generating') : label}
+          {generating ? progressText : label}
         </button>
       )}
     </div>

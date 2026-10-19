@@ -29,6 +29,22 @@ Generate exactly one output question for each input slot, in that same order. Do
 project deep dives verify claimed work; scenarios are hypothetical; fundamentals connect mechanism →
 symptom → engineering decision; communication or HR pressure remains professional and non-discriminatory.
 
+SPECIFICITY GATE — apply this before writing every question. A question that could be asked unchanged
+to another candidate for the same role is a failure:
+- The stem must name at least one concrete object from the slot evidence: a project, system, technology,
+  dataset, tool, metric, incident, deliverable, or business rule.
+- Abstract behavioural stems ("说一次你…", "你怎么看待…", "你如何提升…", "讲讲你的优点") are not
+  acceptable. If a behavioural angle is required, anchor it to a named project/technology/incident
+  from the evidence and ask for the decision, mechanism, evidence and trade-off — not a story about attitude.
+- For a technical JD, every question — including communication, learning, logic and pressure slots —
+  must use a concrete technical artifact from the evidence as its subject.
+- For a résumé project slot, ask about the candidate's personal decision, implementation, metric or
+  failure in that exact project. For a JD slot, build a realistic scenario around that exact requirement.
+  For a gap slot, test how they would close that gap on a named task, not whether they have generic
+  "learning ability".
+- The specificity test: if the candidate's résumé changed, would this question have to change? If not,
+  it is generic — rewrite it.
+
 Evidence anchor and factual boundaries:
 - The input slot's source and evidence are the authoritative evidence anchor. A generic question that
   could be used unchanged for any role and candidate is a failure.
@@ -104,6 +120,10 @@ Other fields:
   answer. For open-ended or behavioural questions, describe the skeleton of a strong account
   (what facts, what numbers, what self-criticism it would contain) instead of a factual answer.
 - "estimatedMinutes" is an integer covering the question AND its follow-ups; "difficulty" is one of easy / medium / hard.
+
+Before returning, verify every question has: a non-empty intent, all three rubric levels, 4-6 follow-ups each
+with purpose/question/answer, at least 2 redFlags, and a non-empty referenceAnswer. Exactly one question per
+assigned slot, in order. Do not omit fields to shorten the response.
 
 Return JSON with this exact shape:
 {"questions":[{"dimension":"","question":"","intent":"","rubric":{"excellent":"","pass":"","fail":""},"followUps":[{"purpose":"要细节","question":"","answer":""}],"redFlags":[],"referenceAnswer":"","estimatedMinutes":8,"difficulty":"medium"}]}
@@ -294,6 +314,11 @@ First extract concise, explicit facts into three separate lists:
 Never convert an inference into a résumé fact. Do not invent metrics, architecture, incidents, ownership,
 tools, scale, outcomes, or a candidate's experience.
 
+A fact is only useful when it names something concrete: a project, system, technology, dataset, metric,
+ownership boundary, constraint, or business rule. Self-descriptions such as "strong communication" are
+not résumé facts and must not become the basis of a slot. Every jdRequirement must name the concrete
+tool, system, workflow, or deliverable it requires — not a vague trait.
+
 Then create exactly ${input.questionCount} slots. ${roleLine}
 
 Each slot must use one configured dimension key, one allowed category, one allowed source, a concrete topic,
@@ -304,6 +329,18 @@ duplicating the same event or knowledge point.
 
 For every slot, copy one complete entry exactly from the corresponding source list into "evidence":
 resume → resumeFacts, jd → jdRequirements, gap → gaps. Do not paraphrase, shorten, combine, or extend it.
+
+Specificity contract — a slot is generic and unacceptable when its topic could be asked unchanged to
+another candidate for the same job title:
+- The topic must name a concrete object from its evidence: project, system, technology, dataset, metric,
+  incident, tool, deliverable, or business rule.
+- At least half of all slots must require professional knowledge from the JD or résumé (mechanisms,
+  trade-offs, failure modes, delivery constraints), not just communication or learning attitude.
+- When a role_professional dimension is configured, every slot assigned to it must target a JD must-have
+  professional skill. Never fill it with "tell me about yourself", "what are your strengths", or generic
+  teamwork stories.
+- For a technical JD, even slots scored under general dimensions must be anchored in a concrete technical
+  episode, artifact or decision from the evidence.
 
 Mandatory source portfolio:
 - resume: at most ${maxResume} slots (≤40%).
@@ -323,8 +360,12 @@ If gaps is non-empty, satisfy the mandatory gap quota above. If gaps is empty, i
 Configured dimensions and mandatory slot allocations (use every key exactly the stated number of times):
 ${dimensionLines}
 
-Return JSON with this exact shape:
-{"resumeFacts":[""],"jdRequirements":[""],"gaps":[""],"slots":[{"category":"backend_fundamentals","source":"jd","dimension":"","topic":"","evidence":"","difficulty":"medium"}]}
+Self-check before returning: count the slots (must be exactly ${input.questionCount}), count each dimension against
+the mandatory allocations above, and verify every evidence string was copied verbatim from its source list.
+Fix any mismatch before outputting; do not return a partial blueprint.
+
+Return JSON with this exact shape (the category in the example is only a shape example; use the allowed categories above):
+{"resumeFacts":[""],"jdRequirements":[""],"gaps":[""],"slots":[{"category":"project_deep_dive","source":"jd","dimension":"","topic":"","evidence":"","difficulty":"medium"}]}
 
 ${JSON_RULE}`;
 
@@ -348,6 +389,11 @@ export interface DimensionQuestionsPromptInput extends Omit<QuestionsPromptInput
   dimension: DimensionConfig;
   blueprint: InterviewBlueprint;
   slots: QuestionSlot[];
+  /**
+   * 同一维度里不归这一批生成的其它槽位。只作为上下文，让模型知道整条维度
+   * 还有哪些题，避免分批生成时不同批次问重复的事件/知识点。
+   */
+  otherSlots?: QuestionSlot[];
 }
 
 /**
@@ -386,6 +432,16 @@ evidence: ${slot.evidence}
 difficulty: ${slot.difficulty}`,
     )
     .join('\n\n');
+  // 分批生成时，同一维度里后续/前序批次的槽位只作为上下文，用来防止重复问同一件事。
+  // 它们不进入本次输出，质量要求与整批生成时完全一致。
+  const siblingBlock = input.otherSlots?.length
+    ? `Other planned slots in this same competency — context only, do NOT generate questions for them:
+${input.otherSlots
+  .map((slot) => `- ${slot.category} | ${slot.topic} | evidence: ${slot.evidence}`)
+  .join('\n')}
+Make this batch distinct from those: do not reuse their event, system, technology, metric or knowledge point.
+`
+    : '';
 
   const prompt = `Job title: ${input.jobTitle}
 
@@ -409,8 +465,9 @@ Competency to assess: ${input.dimension.label} (key: ${input.dimension.key})
 ${guideBlock}${othersBlock}Assigned slots:
 ${slotBlocks}
 
-Produce one output question per slot, in order. Preserve each slot's category, source, dimension, topic,
-evidence, and difficulty; the slot is the complete question assignment.
+${siblingBlock}Produce one output question per slot, in order, for the assigned slots above. Preserve each slot's category, source, dimension, topic,
+evidence, and difficulty; the slot is the complete question assignment. The other planned slots are context
+only — do not output questions for them.
 
 Respond with JSON only.`;
 

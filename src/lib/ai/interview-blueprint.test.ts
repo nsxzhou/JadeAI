@@ -28,6 +28,27 @@ const VALID_BLUEPRINT = {
   slots: BLUEPRINT_SLOTS,
 };
 
+/** 满足质量闸门的单题：4 条带答案的追问、完整 rubric、危险信号和参考答案。 */
+function qualityQuestion() {
+  return {
+    dimension: 'placeholder',
+    question: '讲讲你当时怎么做的？',
+    intent: '看真实参与度',
+    rubric: { excellent: 'a', pass: 'b', fail: 'c' },
+    followUps: [
+      { purpose: '要细节', question: '具体指标是多少？', answer: '给出 P95 与 QPS' },
+      { purpose: '要归因', question: '哪些是你个人做的？', answer: '说清个人决策与团队分工' },
+      { purpose: '反事实', question: '如果不用 Redis 呢？', answer: '给出替代方案与代价' },
+      { purpose: '要教训', question: '现在会怎么改？', answer: '说出可复用的教训' },
+    ],
+    referencePoints: ['p'],
+    redFlags: ['把团队成果说成个人成果', '只会复述默认配置'],
+    referenceAnswer: '定位阶段：看监控与日志\n技术细节：命中率与延迟\n解决方案：缓存与降级\n具体指标：P95 下降 40%',
+    estimatedMinutes: 5,
+    difficulty: 'medium',
+  };
+}
+
 function mockModel(blueprint: unknown) {
   generateTextMock.mockImplementation(async (args: { prompt: string }) => {
     if (args.prompt.includes('Plan the interview blueprint now')) {
@@ -35,18 +56,7 @@ function mockModel(blueprint: unknown) {
     }
     // 每个维度一路，各要 1 道题
     return {
-      text: JSON.stringify({
-        questions: [{
-          dimension: 'placeholder',
-          question: '讲讲你当时怎么做的？',
-          intent: '看真实参与度',
-          rubric: { excellent: 'a', pass: 'b', fail: 'c' },
-          followUps: [],
-          referencePoints: ['p'],
-          estimatedMinutes: 5,
-          difficulty: 'medium',
-        }],
-      }),
+      text: JSON.stringify({ questions: [qualityQuestion()] }),
     };
   });
 }
@@ -92,10 +102,10 @@ describe('planSessionQuestions', () => {
     await expect(plan()).rejects.toThrow(/exactly 6 slots/);
   });
 
-  it('维度配额不对时整次失败', async () => {
+  it('某个启用维度一题都没有时整次失败', async () => {
     const slots = BLUEPRINT_SLOTS.map((slot, index) => (index === 0 ? { ...slot, dimension: 'middleware_database' } : slot));
     mockModel({ ...VALID_BLUEPRINT, slots });
-    await expect(plan()).rejects.toThrow(/must contain exactly/);
+    await expect(plan()).rejects.toThrow(/must contain at least 1 slot/);
   });
 
   it('非 Go 堆栈出现 go_fundamentals 时整次失败', async () => {
@@ -121,5 +131,80 @@ describe('planSessionQuestions', () => {
       throw new Error('model exploded');
     });
     await expect(plan()).rejects.toThrow(/failed for at least one dimension/);
+  });
+
+  it('蓝图第一次校验失败时自动重试，第二次成功', async () => {
+    let blueprintCalls = 0;
+    generateTextMock.mockImplementation(async (args: { prompt: string }) => {
+      if (args.prompt.includes('Plan the interview blueprint now')) {
+        blueprintCalls += 1;
+        return {
+          text: JSON.stringify(
+            blueprintCalls === 1
+              ? { ...VALID_BLUEPRINT, slots: BLUEPRINT_SLOTS.slice(0, 5) }
+              : VALID_BLUEPRINT,
+          ),
+        };
+      }
+      return {
+        text: JSON.stringify({ questions: [qualityQuestion()] }),
+      };
+    });
+
+    const { questions } = await plan();
+    expect(questions).toHaveLength(6);
+    expect(blueprintCalls).toBe(2);
+  });
+
+  it('题目字段不完整时触发质量闸门重试，不会静默降级', async () => {
+    let questionCalls = 0;
+    generateTextMock.mockImplementation(async (args: { prompt: string }) => {
+      if (args.prompt.includes('Plan the interview blueprint now')) {
+        return { text: JSON.stringify(VALID_BLUEPRINT) };
+      }
+      questionCalls += 1;
+      if (questionCalls === 1) {
+        return {
+          text: JSON.stringify({
+            questions: [{
+              ...qualityQuestion(),
+              followUps: [],
+              referenceAnswer: '',
+            }],
+          }),
+        };
+      }
+      return { text: JSON.stringify({ questions: [qualityQuestion()] }) };
+    });
+
+    const { questions } = await plan();
+    expect(questions).toHaveLength(6);
+    expect(questionCalls).toBeGreaterThan(6);
+  });
+
+  it('单个题目输出损坏时重试，且不通过缩短内容换成功率', async () => {
+    let questionCalls = 0;
+    const questionSystems: string[] = [];
+    generateTextMock.mockImplementation(async (args: { prompt: string; system?: string }) => {
+      if (args.prompt.includes('Plan the interview blueprint now')) {
+        return { text: JSON.stringify(VALID_BLUEPRINT) };
+      }
+      questionCalls += 1;
+      questionSystems.push(args.system ?? '');
+      if (questionCalls === 1) return { text: 'not json at all' };
+      return {
+        text: JSON.stringify({ questions: [qualityQuestion()] }),
+      };
+    });
+
+    const { questions } = await plan();
+    expect(questions).toHaveLength(6);
+    expect(questionCalls).toBeGreaterThan(6);
+
+    const retrySystem = questionSystems.find((system) => system.includes('RETRY NOTE'));
+    expect(retrySystem).toContain('do not shorten the required follow-ups or reference answer');
+    // 原始质量要求仍在，没有为了重试而删掉 4–6 条追问。
+    expect(retrySystem).toContain('4-6 of them');
+    expect(retrySystem).toContain('referenceAnswer');
   });
 });

@@ -35,6 +35,11 @@ import {
 import { useFingerprint } from '@/hooks/use-fingerprint';
 import { getAIHeaders } from '@/stores/settings-store';
 import { dimensionColor } from '@/lib/perspective/dimension-colors';
+import { consumeQuestionGenerationStream } from '@/lib/perspective/generation-client';
+import {
+  generationProgressPercent,
+  type GenerationProgress,
+} from '@/lib/perspective/generation-progress';
 import { countAnswered, countSkipped } from '@/lib/perspective/answers';
 import { markQuestionSkipped, setQuestionAnswer } from '@/lib/perspective/questions';
 import { cn } from '@/lib/utils';
@@ -77,6 +82,7 @@ export function InterviewStage({
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [elapsed, setElapsed] = useState(0);
   const [regenerating, setRegenerating] = useState(false);
+  const [regenerateProgress, setRegenerateProgress] = useState<GenerationProgress | null>(null);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   /**
    * 一个开关控制所有参考答案：追问的答案 + 主参考答案。
@@ -220,6 +226,7 @@ export function InterviewStage({
 
   async function doRegenerate() {
     setRegenerating(true);
+    setRegenerateProgress(null);
     try {
       const res = await fetch(`/api/perspective/candidates/${candidateId}/questions`, {
         method: 'POST',
@@ -228,20 +235,22 @@ export function InterviewStage({
           ...getAIHeaders(),
         },
       });
-      if (!res.ok) throw new Error('generate failed');
-      const data = await res.json();
+      const updated = await consumeQuestionGenerationStream(res, setRegenerateProgress);
       // 题都换了，之前记的答案没有意义，防抖窗口里待存的也一并丢弃，
       // 否则它会把旧答案写回到新题目上
       pendingRef.current.clear();
       if (timerRef.current) clearTimeout(timerRef.current);
       setSaveState('idle');
-      setCandidate(data.candidate);
+      setCandidate(updated);
       setIndex(0);
       setDraft('');
     } catch {
-      toast.error(t('errors.generateFailed'));
+      toast.error(t('errors.generateFailed'), {
+        description: t('errors.generateFailedHint'),
+      });
     } finally {
       setRegenerating(false);
+      setRegenerateProgress(null);
     }
   }
 
@@ -311,6 +320,7 @@ export function InterviewStage({
   const hasAnswerBody =
     Boolean(current.referenceAnswer?.trim()) || current.referencePoints.length > 0;
   const color = dimensionColor(current.dimension);
+  const regeneratePercent = generationProgressPercent(regenerateProgress);
 
   return (
     <div className={shell}>
@@ -338,7 +348,14 @@ export function InterviewStage({
                 ) : (
                   <Sparkles className="h-3.5 w-3.5" />
                 )}
-                {regenerating ? t('questions.generating') : t('questions.regenerate')}
+                {regenerating
+                  ? regenerateProgress
+                    ? t('questions.generatingProgress', {
+                      done: regenerateProgress.completed,
+                      total: regenerateProgress.total,
+                    })
+                    : t('questions.generating')
+                  : t('questions.regenerate')}
               </Button>
               <Button
                 size="sm"
@@ -359,6 +376,32 @@ export function InterviewStage({
           </button>
         </span>
       </header>
+
+      {regenerating && (
+        <div className="shrink-0 border-b bg-zinc-50 px-5 py-1.5 dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="flex items-center gap-3 text-[11px] text-zinc-500">
+            <span>
+              {regenerateProgress
+                ? t(`addFlow.phases.${regenerateProgress.phase}`)
+                : t('questions.generating')}
+            </span>
+            {regenerateProgress && (
+              <span className="tabular-nums">
+                {regenerateProgress.completed}/{regenerateProgress.total}
+              </span>
+            )}
+            {regenerateProgress?.retry && (
+              <span className="text-zinc-400">{t('addFlow.retrying')}</span>
+            )}
+          </div>
+          <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+            <div
+              className="h-full rounded-full bg-brand transition-[width] duration-300"
+              style={{ width: `${regeneratePercent}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 控制台：什么都不折叠。左栏列出全部题目（色点即维度、勾即已记），
           右侧题干、评分标准三栏、追问与要点全部铺开。
@@ -431,6 +474,13 @@ export function InterviewStage({
               </h1>
               {current.intent && (
                 <p className="mt-2 text-[12.5px] leading-relaxed text-zinc-500">{current.intent}</p>
+              )}
+              {current.evidence && (
+                <p className="mt-2 line-clamp-2 text-[11.5px] leading-relaxed text-zinc-400">
+                  <span className="font-medium">{t('questions.basis')}</span>
+                  {current.source ? ` · ${t(`questions.sources.${current.source}`)}` : ''}
+                  {` · ${current.evidence}`}
+                </p>
               )}
             </div>
 

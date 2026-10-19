@@ -137,6 +137,31 @@ difficulty: medium`);
     expect(prompt).not.toContain('How to probe this competency');
   });
 
+  it('分批生成时把同维度其它槽位作为防重复上下文，但只输出本批题目', () => {
+    const target = blueprint.slots[0];
+    const sibling = {
+      ...blueprint.slots[1],
+      topic: '另一个项目的个人职责',
+      evidence: '简历里另一个 gRPC 项目',
+    };
+    const { prompt } = buildDimensionQuestionsPrompt({
+      ...base,
+      dimension: DIMENSIONS[0],
+      blueprint,
+      slots: [target],
+      otherSlots: [sibling],
+    });
+
+    expect(prompt).toContain('Other planned slots in this same competency');
+    expect(prompt).toContain('另一个项目的个人职责');
+    expect(prompt).toContain('简历里另一个 gRPC 项目');
+    expect(prompt).toContain('do not output questions for them');
+    // 本批仍然只有目标槽位需要输出
+    expect(prompt).toContain('Assigned slots:');
+    expect(prompt).toContain('topic: GMP 调度与阻塞调用');
+    expect(prompt).not.toContain('slotIndex');
+  });
+
   it('告诉模型别人负责哪些维度，避免出重复的题', () => {
     const { prompt } = buildDimensionQuestionsPrompt({
       ...base,
@@ -273,6 +298,9 @@ describe('buildInterviewBlueprintPrompt', () => {
     expect(system).toContain('at least 1 communication_pressure slot');
     expect(system).toContain('at least 1 hr_motivation slot');
     expect(system).toContain('copy one complete entry exactly from the corresponding source list');
+    expect(system).toContain('Specificity contract');
+    expect(system).toContain('generic and unacceptable');
+    expect(system).toContain('At least half of all slots must require professional knowledge');
     expect(prompt).toContain('Golang 开发工程师');
     expect(prompt).toContain('重点考察技术原理与工程取舍');
   });
@@ -479,6 +507,13 @@ describe('出题 system prompt 的硬约束', () => {
   it('明确要求题干短、且深度放在追问里', () => {
     expect(system).toContain('One sentence');
     expect(system).toMatch(/Depth lives in "followUps"/);
+  });
+
+  it('要求每道题锚定具体证据，拒绝可套用到任何候选人的通用题', () => {
+    expect(system).toContain('SPECIFICITY GATE');
+    expect(system).toContain('concrete object from the slot evidence');
+    expect(system).toContain('If a behavioural angle is required');
+    expect(system).toContain('For a technical JD, every question');
   });
 
   it('追问要 4-6 条并带目的标签', () => {
