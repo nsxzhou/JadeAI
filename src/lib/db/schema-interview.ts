@@ -16,7 +16,13 @@ export const interviewSessions = sqliteTable('interview_sessions', {
   primaryStack: text('primary_stack'),
   /** 题数预设 short | standard | long */
   questionCountPreset: text('question_count_preset'),
-  /** 整场限时 = 题数 × 180 × 1.1 */
+  /**
+   * 每题限时（秒）。NULL = 不限时；默认 180。
+   *
+   * 老会话由迁移回填 180，因此 NULL 只代表用户显式选择了「不限时」。
+   */
+  questionTimeLimitSec: integer('question_time_limit_sec').default(180),
+  /** 整场限时 = 题数 × 每题限时 × 1.1；不限时为 NULL */
   totalTimeLimitSec: integer('total_time_limit_sec'),
   /** 当前题，供「中断后恢复」 */
   currentQuestionId: text('current_question_id'),

@@ -23,6 +23,7 @@ import type {
   DimensionScore as DomainDimensionScore,
   RoundEvaluation as DomainRoundEvaluation,
 } from '@/lib/interview-core/types';
+import { QUESTION_TIME_LIMIT_SEC } from '@/lib/interview-core/types';
 
 /** 跨场次查询的题目行：题目 + 它属于哪个场次。 */
 export interface UserQuestionRow {
@@ -51,6 +52,8 @@ export const interviewRepository = {
     primaryStack?: string | null;
     questionCountPreset?: string | null;
     stressLevel?: string;
+    /** 每题限时（秒）；null = 不限时。缺省按 180 秒。 */
+    questionTimeLimitSec?: number | null;
     totalTimeLimitSec?: number | null;
     startedAt?: Date | null;
   }) {
@@ -66,6 +69,9 @@ export const interviewRepository = {
       primaryStack: data.primaryStack ?? null,
       questionCountPreset: data.questionCountPreset ?? null,
       stressLevel: data.stressLevel ?? 'gentle',
+      // 区分「没传」（走默认 180）与「显式不限时」（null）
+      questionTimeLimitSec:
+        data.questionTimeLimitSec === undefined ? QUESTION_TIME_LIMIT_SEC : data.questionTimeLimitSec,
       totalTimeLimitSec: data.totalTimeLimitSec ?? null,
       startedAt: data.startedAt ?? null,
     } as any);

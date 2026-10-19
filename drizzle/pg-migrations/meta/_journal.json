@@ -50,6 +50,13 @@
       "when": 1792214258921,
       "tag": "0006_special_mercury",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792288359146,
+      "tag": "0007_massive_polaris",
+      "breakpoints": true
     }
   ]
 }

@@ -41,6 +41,10 @@ export interface InterviewSession {
   selectedInterviewers: InterviewerConfig[];
   currentRound: number;
   status: InterviewSessionStatus;
+  /** 每题限时（秒）；null = 不限时。字段缺失的老数据按默认 180 处理。 */
+  questionTimeLimitSec?: number | null;
+  /** 整场限时；null = 不限时 */
+  totalTimeLimitSec?: number | null;
   /** 列表接口带出的报告摘要；详情接口不一定有 */
   reportSummary?: InterviewReportSummary | null;
   rounds?: InterviewRound[];

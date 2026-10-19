@@ -17,6 +17,15 @@ const PRESETS: QuestionCountPreset[] = ['short', 'standard', 'long'];
 const STRESS_LEVELS: StressLevel[] = ['gentle', 'standard', 'sharp'];
 const ROLE_FAMILIES = ['auto', 'backend', 'frontend', 'data_algo', 'qa_infra', 'other'] as const;
 
+type TimeChoice = 'unlimited' | 'one' | 'two' | 'three' | 'five' | 'custom';
+const TIME_CHOICES: TimeChoice[] = ['unlimited', 'one', 'two', 'three', 'five', 'custom'];
+const TIME_CHOICE_SEC: Record<Exclude<TimeChoice, 'unlimited' | 'custom'>, number> = {
+  one: 60,
+  two: 120,
+  three: 180,
+  five: 300,
+};
+
 /** 三个选项以内用分段按钮，比下拉少一次点击，也能一眼看到全部选项。 */
 function ChoiceRow<T extends string>({ options, value, onChange, labelOf }: {
   options: readonly T[];
@@ -56,9 +65,27 @@ export function InterviewSetup() {
   const [preset, setPreset] = useState<QuestionCountPreset>('standard');
   const [stress, setStress] = useState<StressLevel>('gentle');
   const [roleFamily, setRoleFamily] = useState<(typeof ROLE_FAMILIES)[number]>('auto');
+  // 每题限时：默认 3 分钟；可以显式选择「不限时」或自定义分钟数。
+  const [timeChoice, setTimeChoice] = useState<TimeChoice>('three');
+  const [customMinutes, setCustomMinutes] = useState('3');
   const [isCreating, setIsCreating] = useState(false);
 
-  const canStart = jd.trim().length > 0 && selectedInterviewers.length > 0;
+  const customMinutesValue = Number(customMinutes);
+  const customMinutesValid =
+    Number.isFinite(customMinutesValue)
+    && customMinutesValue >= 1
+    && customMinutesValue <= 60;
+  const questionTimeLimitSec =
+    timeChoice === 'unlimited'
+      ? null
+      : timeChoice === 'custom'
+        ? customMinutesValid
+          ? Math.round(customMinutesValue * 60)
+          : null
+        : TIME_CHOICE_SEC[timeChoice];
+  const timeChoiceValid = timeChoice !== 'custom' || customMinutesValid;
+
+  const canStart = jd.trim().length > 0 && selectedInterviewers.length > 0 && timeChoiceValid;
 
   const handleStart = async () => {
     if (!canStart) return;
@@ -80,6 +107,7 @@ export function InterviewSetup() {
           interviewers: selectedInterviewers,
           questionCountPreset: preset,
           stressLevel: stress,
+          questionTimeLimitSec,
           ...(roleFamily === 'auto' ? {} : { roleFamilyKey: roleFamily }),
         }),
       });
@@ -120,6 +148,34 @@ export function InterviewSetup() {
           <div>
             <div className="mb-2 text-sm font-semibold">{t('questionCountLabel')}</div>
             <ChoiceRow options={PRESETS} value={preset} onChange={setPreset} labelOf={(p) => t(`presets.${p}`)} />
+          </div>
+          <div>
+            <div className="mb-2 text-sm font-semibold">{t('questionTimeLabel')}</div>
+            <ChoiceRow
+              options={TIME_CHOICES}
+              value={timeChoice}
+              onChange={setTimeChoice}
+              labelOf={(choice) => t(`questionTime.${choice}`)}
+            />
+            {timeChoice === 'custom' && (
+              <div className="mt-2 flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  max={60}
+                  step={1}
+                  value={customMinutes}
+                  onChange={(e) => setCustomMinutes(e.target.value)}
+                  placeholder={t('questionTime.customPlaceholder')}
+                  className="h-8 w-24 rounded-lg text-xs"
+                />
+                <span className="text-xs text-zinc-500">{t('questionTime.minutesSuffix')}</span>
+                {!customMinutesValid && (
+                  <span className="text-xs text-red-500">{t('questionTime.customRange')}</span>
+                )}
+              </div>
+            )}
+            <p className="mt-2 text-xs text-zinc-500">{t('questionTime.hint')}</p>
           </div>
           <div>
             <div className="mb-2 text-sm font-semibold">{t('stressLabel')}</div>

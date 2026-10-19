@@ -1,0 +1,1 @@
+ALTER TABLE `interview_sessions` ADD `question_time_limit_sec` integer DEFAULT 180;

@@ -65,12 +65,24 @@ export const QUESTION_COUNT_PRESETS: Record<QuestionCountPreset, number> = {
   long: 15,
 };
 
+/** 每题默认限时。 */
 export const QUESTION_TIME_LIMIT_SEC = 180;
+/** 可选限时区间。低于下限没有练习价值，高于上限等于没有约束。 */
+export const QUESTION_TIME_LIMIT_MIN_SEC = 30;
+export const QUESTION_TIME_LIMIT_MAX_SEC = 60 * 60;
 export const SESSION_TIME_LIMIT_FACTOR = 1.1;
 
-/** 整场限时 = 题数 × 每题限时 × 1.1。 */
-export function sessionTimeLimitSec(questionCount: number): number {
-  return Math.round(questionCount * QUESTION_TIME_LIMIT_SEC * SESSION_TIME_LIMIT_FACTOR);
+/**
+ * 整场限时 = 题数 × 每题限时 × 1.1。
+ *
+ * 每题限时为 null 表示不限时，整场也不设限。
+ */
+export function sessionTimeLimitSec(
+  questionCount: number,
+  perQuestionSec: number | null = QUESTION_TIME_LIMIT_SEC,
+): number | null {
+  if (perQuestionSec === null || perQuestionSec <= 0) return null;
+  return Math.round(questionCount * perQuestionSec * SESSION_TIME_LIMIT_FACTOR);
 }
 
 /** 错题阈值：单题绝对分低于它即入错题本。 */

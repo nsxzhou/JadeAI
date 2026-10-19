@@ -12,6 +12,7 @@ import {
   type RoleFamilyKey,
   type StressLevel,
 } from '@/lib/interview-core/types';
+import { normalizeQuestionTimeLimitSec } from '@/lib/interview-core/timing';
 import { dbReady } from '@/lib/db';
 
 const PRESETS = Object.keys(QUESTION_COUNT_PRESETS) as QuestionCountPreset[];
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest) {
     questionCountPreset,
     stressLevel,
     roleFamilyKey,
+    questionTimeLimitSec,
   } = body;
 
   if (!jobDescription || !jobTitle || !interviewers?.length) {
@@ -53,6 +55,7 @@ export async function POST(request: NextRequest) {
     : 'standard';
   const stress: StressLevel = STRESS_LEVELS.includes(stressLevel) ? stressLevel : 'gentle';
   const totalQuestions = QUESTION_COUNT_PRESETS[preset];
+  const questionTime = normalizeQuestionTimeLimitSec(questionTimeLimitSec);
 
   // 岗位族：用户给了就用，否则让模型从静态清单里选；模型不可用就回落关键词判定。
   let roleFamily: RoleFamilyKey;
@@ -84,7 +87,8 @@ export async function POST(request: NextRequest) {
     primaryStack,
     questionCountPreset: preset,
     stressLevel: stress,
-    totalTimeLimitSec: sessionTimeLimitSec(totalQuestions),
+    questionTimeLimitSec: questionTime,
+    totalTimeLimitSec: sessionTimeLimitSec(totalQuestions, questionTime),
     startedAt: new Date(),
   });
 

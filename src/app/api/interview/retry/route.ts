@@ -4,7 +4,7 @@ import { interviewRepository } from '@/lib/db/repositories/interview.repository'
 import { getPresetInterviewer } from '@/lib/interview/interviewers';
 import { questionToRow, rowToQuestion } from '@/lib/interview-core/legacy-questions';
 import { normalizePrimaryStack, normalizeRoleFamily } from '@/lib/interview-core/role-family';
-import { RETRY_QUESTION_LIMIT, sessionTimeLimitSec } from '@/lib/interview-core/types';
+import { QUESTION_TIME_LIMIT_SEC, RETRY_QUESTION_LIMIT, sessionTimeLimitSec } from '@/lib/interview-core/types';
 import { dbReady } from '@/lib/db';
 
 /**
@@ -62,6 +62,9 @@ export async function POST(request: NextRequest) {
   const primaryStack = sourceSession?.primaryStack ?? sources[0].primaryStack ?? null;
 
   const total = sources.length;
+  // 重练继承原场的每题限时；原场没有会话（来自面试官视角）时用默认值。
+  const inheritedLimit = sourceSession?.questionTimeLimitSec;
+  const questionTimeLimitSec = inheritedLimit === undefined ? QUESTION_TIME_LIMIT_SEC : inheritedLimit;
   const session = await interviewRepository.createSession({
     userId: user.id,
     jobDescription,
@@ -71,7 +74,8 @@ export async function POST(request: NextRequest) {
     primaryStack: normalizePrimaryStack(primaryStack),
     questionCountPreset: 'short',
     stressLevel: (sourceSession?.stressLevel as never) ?? 'gentle',
-    totalTimeLimitSec: sessionTimeLimitSec(total),
+    questionTimeLimitSec,
+    totalTimeLimitSec: sessionTimeLimitSec(total, questionTimeLimitSec),
     startedAt: new Date(),
   });
 

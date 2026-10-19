@@ -38,10 +38,7 @@ function applySqlFile(sqlite: Database.Database, file: string) {
 
 const perspectiveMigration = readdirSync(MIGRATIONS).find((f) => f.startsWith('0007_'))!;
 /** 本次收尾：删掉旧 JSON 列、给评价加 status。 */
-const coordinatesMigration = readdirSync(MIGRATIONS)
-  .filter((f) => f.endsWith('.sql'))
-  .sort()
-  .at(-1)!;
+const coordinatesMigration = readdirSync(MIGRATIONS).find((f) => f.startsWith('0008_'))!;
 
 describe('perspective rename migration', () => {
   it('在旧库上改名并保留数据，随后不再有旧表', () => {

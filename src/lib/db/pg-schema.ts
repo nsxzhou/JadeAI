@@ -123,6 +123,9 @@ export const interviewSessions = pgTable('interview_sessions', {
   roleFamilyKey: text('role_family_key'),
   primaryStack: text('primary_stack'),
   questionCountPreset: text('question_count_preset'),
+  /** 每题限时（秒）。NULL = 不限时；默认 180。 */
+  questionTimeLimitSec: integer('question_time_limit_sec').default(180),
+  /** 整场限时 = 题数 × 每题限时 × 1.1；不限时为 NULL */
   totalTimeLimitSec: integer('total_time_limit_sec'),
   currentQuestionId: text('current_question_id'),
   stressLevel: text('stress_level').notNull().default('gentle'),

@@ -1,12 +1,48 @@
 import { describe, expect, it } from 'vitest';
-import { elapsedSec, isQuestionTimedOut, remainingQuestionSec, remainingSessionSec, sessionTimeLimitSec, shouldEndSession } from './timing';
+import {
+  elapsedSec,
+  isQuestionTimedOut,
+  normalizeQuestionTimeLimitSec,
+  remainingQuestionSec,
+  remainingSessionSec,
+  sessionTimeLimitSec,
+  shouldEndSession,
+} from './timing';
 
 const T0 = 1_700_000_000_000;
 
 describe('sessionTimeLimitSec', () => {
-  it('整场限时 = 题数 × 180 × 1.1', () => {
+  it('整场限时 = 题数 × 每题限时 × 1.1', () => {
     expect(sessionTimeLimitSec(10)).toBe(Math.round(10 * 180 * 1.1));
     expect(sessionTimeLimitSec(6)).toBe(Math.round(6 * 180 * 1.1));
+    expect(sessionTimeLimitSec(6, 120)).toBe(Math.round(6 * 120 * 1.1));
+  });
+
+  it('不限时没有整场上限', () => {
+    expect(sessionTimeLimitSec(10, null)).toBeNull();
+    expect(sessionTimeLimitSec(10, 0)).toBeNull();
+  });
+});
+
+describe('normalizeQuestionTimeLimitSec', () => {
+  it('缺省/非法值回到默认 180 秒', () => {
+    expect(normalizeQuestionTimeLimitSec(undefined)).toBe(180);
+    expect(normalizeQuestionTimeLimitSec('')).toBe(180);
+    expect(normalizeQuestionTimeLimitSec('   ')).toBe(180);
+    expect(normalizeQuestionTimeLimitSec('abc')).toBe(180);
+  });
+
+  it('显式不限时映射为 null', () => {
+    for (const value of [null, 0, 'none', 'unlimited', 'off']) {
+      expect(normalizeQuestionTimeLimitSec(value)).toBeNull();
+    }
+  });
+
+  it('合法秒数被规整并钳进区间', () => {
+    expect(normalizeQuestionTimeLimitSec(240)).toBe(240);
+    expect(normalizeQuestionTimeLimitSec('120')).toBe(120);
+    expect(normalizeQuestionTimeLimitSec(5)).toBe(30);
+    expect(normalizeQuestionTimeLimitSec(99_999)).toBe(3600);
   });
 });
 
@@ -24,6 +60,12 @@ describe('remainingQuestionSec', () => {
 
   it('没有开始时间时按满额算', () => {
     expect(remainingQuestionSec(null, T0)).toBe(180);
+  });
+
+  it('不限时永远没有倒计时，也不会超时', () => {
+    expect(remainingQuestionSec(T0, T0 + 600_000, null)).toBe(0);
+    expect(isQuestionTimedOut(T0, T0 + 600_000, null)).toBe(false);
+    expect(elapsedSec(T0, T0 + 600_000, null)).toBe(600);
   });
 });
 
