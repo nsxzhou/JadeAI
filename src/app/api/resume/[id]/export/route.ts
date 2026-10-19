@@ -3,7 +3,7 @@ import { resumeRepository } from '@/lib/db/repositories/resume.repository';
 import { resolveUser, getUserIdFromRequest } from '@/lib/auth/helpers';
 import { generatePdf } from '@/lib/pdf/generate-pdf';
 import { generateHtml } from './builders';
-import { generatePlainText } from './plain-text';
+import { generatePlainText } from '@/lib/resume/plain-text';
 import { generateDocxBuffer } from './docx';
 
 // Chromium download + PDF render needs more time on Vercel serverless

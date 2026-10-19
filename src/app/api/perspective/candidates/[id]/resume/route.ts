@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { extractAIConfig, AIConfigError } from '@/lib/ai/provider';
 import { parseResumeFile, validateResumeFile } from '@/lib/ai/parse-resume';
 import { perspectiveRepository } from '@/lib/db/repositories/perspective.repository';
+import { resumeRepository } from '@/lib/db/repositories/resume.repository';
 import { requireOwnedCandidate } from '@/lib/perspective/access';
+import { generatePlainText, resumeFullName } from '@/lib/resume/plain-text';
 import type { ParsedResume } from '@/lib/ai/parse-schema';
 
 /**
@@ -41,6 +43,44 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { id } = await params;
     const access = await requireOwnedCandidate(request, id);
     if ('error' in access) return access.error;
+
+    // 从 App 内已有的简历库选一份：不重新解析文件，直接把 sections 压成文本。
+    const contentType = request.headers.get('content-type') ?? '';
+    if (contentType.includes('application/json')) {
+      const body = await request.json().catch(() => null);
+      const resumeId = typeof body?.resumeId === 'string' ? body.resumeId : '';
+      if (!resumeId) {
+        return NextResponse.json({ error: 'resumeId required' }, { status: 400 });
+      }
+
+      const resume = await resumeRepository.findById(resumeId);
+      if (!resume || resume.userId !== access.job.userId) {
+        return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
+      }
+
+      const resumeText = generatePlainText(resume).trim();
+      if (!resumeText) {
+        return NextResponse.json({ error: 'Resume is empty' }, { status: 400 });
+      }
+
+      const candidate = await perspectiveRepository.updateCandidate(id, {
+        resumeData: {
+          source: 'library',
+          resumeId: resume.id,
+          title: resume.title,
+          language: resume.language,
+          sections: resume.sections,
+        },
+        resumeText,
+        // 简历换了，之前生成的题目就过期了
+        questions: null,
+        status: 'pending',
+        // 候选人还没起过名字时，用简历里的姓名兜底
+        ...(access.candidate.name ? {} : { name: resumeFullName(resume.sections) }),
+      });
+
+      return NextResponse.json({ candidate, resume: { id: resume.id, title: resume.title } });
+    }
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
