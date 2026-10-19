@@ -28,7 +28,7 @@ export default function InterviewRoomPage({ params }: { params: Promise<{ id: st
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
-  const { setSession, setStatus } = useInterviewStore();
+  const { setSession } = useInterviewStore();
 
   useEffect(() => {
     let cancelled = false;
@@ -73,10 +73,9 @@ export default function InterviewRoomPage({ params }: { params: Promise<{ id: st
           setPreparing(false);
         }
 
+        // 暂停状态原样带进 store：页面重新打开时先显示暂停面板，
+        // 由用户点「继续面试」再恢复，而不是偷偷把数据库里的 paused 当成进行中。
         setSession(session, rounds);
-        if (session.status === 'paused') {
-          setStatus('in_progress');
-        }
 
         const currentRound = rounds[session.currentRound];
         if (currentRound?.messages?.length > 0) {
@@ -95,7 +94,7 @@ export default function InterviewRoomPage({ params }: { params: Promise<{ id: st
     return () => {
       cancelled = true;
     };
-  }, [id, locale, setSession, setStatus]);
+  }, [id, locale, setSession]);
 
   if (loading || preparing) {
     return (

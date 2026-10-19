@@ -3,6 +3,8 @@ import { resolveUser, getUserIdFromRequest } from '@/lib/auth/helpers';
 import { interviewRepository } from '@/lib/db/repositories/interview.repository';
 import { buildHintPrompt, buildSkipPrompt } from '@/lib/ai/interview-prompts';
 import { dbReady } from '@/lib/db';
+import { nextSessionStatus } from '@/lib/interview/session-status';
+import type { InterviewSessionStatus } from '@/types/interview';
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await dbReady;
@@ -17,6 +19,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   const { action, roundId, messageId, marked, locale = 'zh' } = await request.json();
+
+  const sessionStatus = session.status as InterviewSessionStatus;
+
+  // 已完成的面试是只读的；暂停期间只接受恢复，避免后台标签页继续改题、推进轮次。
+  if (sessionStatus === 'completed') {
+    return NextResponse.json({ error: 'Session already completed', status: sessionStatus }, { status: 409 });
+  }
+  if (sessionStatus === 'paused' && action !== 'resume' && action !== 'pause') {
+    return NextResponse.json(
+      { error: 'Session is paused', code: 'SESSION_PAUSED', status: sessionStatus },
+      { status: 409 },
+    );
+  }
 
   // 标记类指令直接合并进目标消息的 metadata。跳过的消息不会因为刷新而丢标记。
   const requireMessage = (): string | null => (typeof messageId === 'string' && messageId ? messageId : null);
@@ -61,11 +76,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: true });
     }
     case 'pause':
-      await interviewRepository.updateSessionStatus(sessionId, 'paused');
-      return NextResponse.json({ success: true });
-    case 'resume':
-      await interviewRepository.updateSessionStatus(sessionId, 'in_progress');
-      return NextResponse.json({ success: true });
+    case 'resume': {
+      const nextStatus = nextSessionStatus(sessionStatus, action);
+      if (!nextStatus) {
+        return NextResponse.json({ error: 'Session already completed', status: sessionStatus }, { status: 409 });
+      }
+      if (nextStatus !== sessionStatus) {
+        await interviewRepository.updateSessionStatus(sessionId, nextStatus);
+      }
+      // 把落库后的状态回给前端，避免「服务端已暂停、界面还停在面试中」。
+      return NextResponse.json({ success: true, status: nextStatus });
+    }
     default:
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
   }

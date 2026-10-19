@@ -69,6 +69,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return new Response('Not found', { status: 404 });
     }
 
+    // 暂停中的面试不接受任何对话：前端会把输入区换成暂停面板，
+    // 这里再兜一层，防止旧标签页或网络重试在暂停期间偷偷推进题目。
+    if (session.status === 'completed') {
+      return new Response(JSON.stringify({ error: 'Session already completed', code: 'SESSION_COMPLETED' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (session.status === 'paused') {
+      return new Response(JSON.stringify({ error: 'Session is paused', code: 'SESSION_PAUSED' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     const { messages, roundId, model: modelId, locale = 'zh', timedOut: timedOutFlag = false } = await request.json();
 
     const round = await interviewRepository.findRound(roundId);
@@ -106,10 +121,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const isInitTrigger = incomingText === INIT_TRIGGER;
     const isTimeoutMarker = incomingText.trim() === TIMEOUT_MESSAGE;
     const hasCandidateMessage = Boolean(incomingText) && !isInitTrigger;
+    // 每题限时为 null = 不限时：此时不存在「超时」这回事，客户端也不会发这个标记。
+    // 兜底防住旧标签页或手动请求，避免把一次正常回答记成 timed_out。
+    const questionTimeLimitSec =
+      session.questionTimeLimitSec === undefined
+        ? QUESTION_TIME_LIMIT_SEC
+        : (session.questionTimeLimitSec as number | null);
     // 超时可以由客户端显式声明（带着已写内容提交），也可以是超时标记本身。
-    const isTimeoutTurn = Boolean(timedOutFlag) || isTimeoutMarker;
+    const isTimeoutTurn =
+      questionTimeLimitSec !== null && (Boolean(timedOutFlag) || isTimeoutMarker);
+    const classifiedTurn = classifyCandidateTurn(incomingText);
     const turnKind: CandidateTurnKind = hasCandidateMessage
-      ? (isTimeoutTurn ? 'timeout' : classifyCandidateTurn(incomingText))
+      ? (isTimeoutTurn
+        ? 'timeout'
+        // 不限时时超时标记只是历史遗留，按普通回答处理
+        : classifiedTurn === 'timeout'
+          ? 'answer'
+          : classifiedTurn)
       : 'none';
 
     const plan = planInterviewTurn({
@@ -156,7 +184,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           ...(isTimeoutMarker ? {} : { answer: incomingText }),
           status: 'timed_out',
           timedOut: true,
-          timeSpentSec: elapsedSec(askedAt ?? null, Date.now(), QUESTION_TIME_LIMIT_SEC),
+          timeSpentSec: elapsedSec(askedAt ?? null, Date.now(), questionTimeLimitSec),
         });
       }
     }
