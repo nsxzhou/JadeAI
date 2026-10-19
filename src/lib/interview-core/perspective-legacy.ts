@@ -13,7 +13,12 @@
  * 题型（`category`）不受影响，仍是这两类题，只是分数落到通用层坐标上。
  */
 import type { DimensionConfig, PrimaryStack, RoleFamilyKey } from './types';
-import { isKnownDimensionKey, normalizeQuestionCounts, resolveDimensions } from './dimension';
+import {
+  ensureRoleProfessionalCoverage,
+  isKnownDimensionKey,
+  normalizeQuestionCounts,
+  resolveDimensions,
+} from './dimension';
 import { resolveRoleFamily } from './role-family';
 
 /** 旧目录 key → 两层坐标 key。不在这张表里的 key 原样保留（自定义维度）。 */
@@ -135,7 +140,11 @@ export function legacyPerspectiveCoordinates(input: {
     });
   }
 
-  const questionCounts = normalizeQuestionCounts(dimensions, rawCounts);
+  const questionCounts = ensureRoleProfessionalCoverage(
+    roleFamilyKey,
+    dimensions,
+    normalizeQuestionCounts(dimensions, rawCounts),
+  );
 
   return { roleFamilyKey, primaryStack, dimensions, questionCounts };
 }

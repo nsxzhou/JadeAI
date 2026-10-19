@@ -16,6 +16,7 @@ import type {
 import { planQuestionCounts } from './dimension';
 import { canonicalizeBlueprintEvidence, normalizeEvidence, sourceListName } from './evidence';
 import { isGoRole, ROLE_FAMILIES } from './role-family';
+import { QUESTION_COUNT_PER_DIMENSION_MAX } from './types';
 
 export type IndexedQuestionSlot = QuestionSlot & { slotIndex: number };
 
@@ -32,6 +33,22 @@ export interface ValidateBlueprintOptions {
   /** 面试官视角逐维度可调时传入；缺省用 planQuestionCounts 推导 */
   questionCounts?: Record<string, number>;
   enforceJdCoverage?: boolean;
+  /**
+   * 默认 true：每个维度的槽位数必须精确等于配置。
+   *
+   * 生成管线可以显式放宽为「覆盖式」：每个启用维度至少 1 题、每个
+   * 单维不超过上限、总数精确。模型很难同时满足 8 个维度 × 精确配额，
+   * 一次偏差就整场作废，收益远小于代价；覆盖式仍保证每个评分坐标都有题。
+   */
+  strictDimensionCounts?: boolean;
+  /**
+   * 默认 true：严格执行简历/JD/缺口比例。
+   *
+   * 放宽后只要求「至少 1 道 JD 来源 + 有缺口时至少 1 道 gap 来源」，
+   * 避免强简历（如 17 题里 9 道简历题）因为百分比上限被整场拒绝。
+   * prompt 仍然按原比例要求模型，只是不再把比例当硬门槛。
+   */
+  strictSourceCoverage?: boolean;
 }
 
 function expectedCountsFor(options: ValidateBlueprintOptions): Record<string, number> {
@@ -80,6 +97,14 @@ export function validateBlueprint(
       );
     }
 
+    // 「岗位专业能力」必须真的考专业内容，不能退化成沟通/动机题。
+    if (
+      slot.dimension === 'role_professional'
+      && (slot.category === 'communication_pressure' || slot.category === 'hr_motivation')
+    ) {
+      throw new Error('role_professional slots must use a professional question category.');
+    }
+
     if (!slot.topic.trim()) {
       throw new Error('Blueprint slot topic must not be empty.');
     }
@@ -104,34 +129,69 @@ export function validateBlueprint(
     const resumeCount = sourceCounts.get('resume') ?? 0;
     const jdCount = sourceCounts.get('jd') ?? 0;
     const gapCount = sourceCounts.get('gap') ?? 0;
-    const maxResume = Math.floor(options.questionCount * 0.4);
-    const minJd = Math.ceil(options.questionCount * 0.35);
-    const minJdAndGap = Math.ceil(options.questionCount * 0.6);
-    const minGap = input.gaps.length > 0
-      ? Math.max(2, Math.ceil(options.questionCount * 0.15))
-      : 0;
-    const minDistinctJd = Math.min(3, input.jdRequirements.length, minJd);
 
-    if (resumeCount > maxResume) {
-      throw new Error(`Blueprint may use at most ${maxResume} resume-sourced slots; received ${resumeCount}.`);
-    }
-    if (jdCount < minJd) {
-      throw new Error(`Blueprint requires at least ${minJd} JD-sourced slots; received ${jdCount}.`);
-    }
-    if (gapCount < minGap) {
-      throw new Error(`Blueprint requires at least ${minGap} gap-sourced slots; received ${gapCount}.`);
-    }
-    if (jdCount + gapCount < minJdAndGap) {
-      throw new Error(`Blueprint requires at least ${minJdAndGap} JD-or-gap slots.`);
-    }
-    if (distinctJdEvidence.size < minDistinctJd) {
-      throw new Error(`Blueprint must cover at least ${minDistinctJd} distinct JD requirements.`);
+    if (options.strictSourceCoverage === false) {
+      // 覆盖式：确保 JD 与缺口都至少被问到，但不拿百分比上限否掉整份蓝图。
+      if (jdCount === 0) {
+        throw new Error('Blueprint must include at least one JD-sourced slot.');
+      }
+      if (input.gaps.length > 0 && gapCount === 0) {
+        throw new Error('Blueprint must include at least one gap-sourced slot when gaps exist.');
+      }
+      if (options.questionCount > 1 && resumeCount === options.questionCount) {
+        throw new Error('Blueprint cannot be sourced entirely from the résumé.');
+      }
+    } else {
+      const maxResume = Math.floor(options.questionCount * 0.4);
+      const minJd = Math.ceil(options.questionCount * 0.35);
+      const minJdAndGap = Math.ceil(options.questionCount * 0.6);
+      const minGap = input.gaps.length > 0
+        ? Math.max(2, Math.ceil(options.questionCount * 0.15))
+        : 0;
+      const minDistinctJd = Math.min(3, input.jdRequirements.length, minJd);
+
+      if (resumeCount > maxResume) {
+        throw new Error(`Blueprint may use at most ${maxResume} resume-sourced slots; received ${resumeCount}.`);
+      }
+      if (jdCount < minJd) {
+        throw new Error(`Blueprint requires at least ${minJd} JD-sourced slots; received ${jdCount}.`);
+      }
+      if (gapCount < minGap) {
+        throw new Error(`Blueprint requires at least ${minGap} gap-sourced slots; received ${gapCount}.`);
+      }
+      if (jdCount + gapCount < minJdAndGap) {
+        throw new Error(`Blueprint requires at least ${minJdAndGap} JD-or-gap slots.`);
+      }
+      if (distinctJdEvidence.size < minDistinctJd) {
+        throw new Error(`Blueprint must cover at least ${minDistinctJd} distinct JD requirements.`);
+      }
     }
   }
 
   for (const dimension of options.dimensions) {
     const expected = expectedDimensionCounts[dimension.key] ?? 0;
     const actual = actualDimensionCounts.get(dimension.key) ?? 0;
+
+    if (options.strictDimensionCounts === false) {
+      // 覆盖式：启用的维度至少 1 题，禁用的维度必须为 0，单维不超上限。
+      if (expected > 0 && actual === 0) {
+        throw new Error(
+          `Blueprint dimension "${dimension.key}" must contain at least 1 slot; received 0.`,
+        );
+      }
+      if (expected === 0 && actual > 0) {
+        throw new Error(
+          `Blueprint dimension "${dimension.key}" is disabled but received ${actual} slot(s).`,
+        );
+      }
+      if (actual > QUESTION_COUNT_PER_DIMENSION_MAX) {
+        throw new Error(
+          `Blueprint dimension "${dimension.key}" exceeds ${QUESTION_COUNT_PER_DIMENSION_MAX} slots; received ${actual}.`,
+        );
+      }
+      continue;
+    }
+
     if (actual !== expected) {
       throw new Error(
         `Blueprint dimension "${dimension.key}" must contain exactly ${expected} slots; received ${actual}.`,

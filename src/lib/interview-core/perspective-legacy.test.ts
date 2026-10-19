@@ -142,12 +142,12 @@ describe('normalizeQuestionCounts', () => {
     dim({ key: 'middleware_database', label: '数据库与中间件', layer: 'family', weight: 2 }),
   ];
 
-  it('通用层抬到至少 1 题，族层允许 0', () => {
+  it('通用层抬到至少 1 题；不足下限时优先补一个族层维度', () => {
     const counts = normalizeQuestionCounts(dimensions, { general_communication: 0, middleware_database: 0 });
     expect(counts.general_communication).toBeGreaterThanOrEqual(1);
     expect(counts.general_logic).toBeGreaterThanOrEqual(1);
-    expect(counts.middleware_database).toBe(0);
-    // 抬起通用层之后不足下界，继续轮流补到 QUESTION_COUNT_MIN
+    // 4 个通用维之外还有族层维度：补到下限时先给它 1 题，避免整场全是通用题。
+    expect(counts.middleware_database).toBe(1);
     const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
     expect(total).toBe(QUESTION_COUNT_MIN);
   });
@@ -166,16 +166,18 @@ describe('normalizeQuestionCounts', () => {
     expect(total).toBe(QUESTION_COUNT_MIN);
   });
 
-  it('总数超限时从族层最大项递减，通用层不动', () => {
+  it('单维超限时压到上限，并把题数转给还有空间的维度', () => {
     const counts = normalizeQuestionCounts(dimensions, {
       general_communication: 5,
       general_logic: 5,
       middleware_database: 25,
     });
     const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
-    expect(total).toBe(QUESTION_COUNT_MAX);
+    // 3 个维度 × 单维上限 5 = 15；不可能凭一维堆到全局上限 30。
+    expect(total).toBe(15);
     expect(counts.general_communication).toBe(5);
-    expect(counts.middleware_database).toBe(QUESTION_COUNT_MAX - 10);
+    expect(counts.middleware_database).toBe(5);
+    expect(Math.max(...Object.values(counts))).toBeLessThanOrEqual(5);
   });
 });
 

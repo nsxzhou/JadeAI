@@ -113,6 +113,41 @@ describe('validateBlueprint', () => {
     const blueprint = validBlueprint();
     expect(() => validateBlueprint(blueprint, { ...options, enforceJdCoverage: true })).toThrow();
   });
+
+  it('岗位专业能力槽位不得退化成沟通/动机题', () => {
+    const otherDimensions = toDimensionConfigs(resolveDimensions('other', 'none'), LABELS);
+    const counts = planQuestionCounts({
+      general: otherDimensions.filter((dimension) => dimension.layer === 'general'),
+      family: otherDimensions.filter((dimension) => dimension.layer === 'family'),
+      total: 10,
+    });
+    const slots: QuestionSlot[] = [];
+    for (const dimension of otherDimensions) {
+      for (let i = 0; i < (counts[dimension.key] ?? 0); i += 1) {
+        slots.push(slot({
+          dimension: dimension.key,
+          category: 'project_deep_dive',
+          source: 'jd',
+          evidence: 'JD 要求',
+        }));
+      }
+    }
+    const professional = slots.find((entry) => entry.dimension === 'role_professional');
+    expect(professional).toBeDefined();
+    professional!.category = 'communication_pressure';
+
+    expect(() => validateBlueprint(
+      { resumeFacts: [], jdRequirements: ['JD 要求'], gaps: [], slots },
+      {
+        questionCount: 10,
+        dimensions: otherDimensions,
+        roleFamily: 'other',
+        primaryStack: 'none',
+        questionCounts: counts,
+        enforceJdCoverage: false,
+      },
+    )).toThrow(/role_professional/);
+  });
 });
 
 // ── 从旧适配层（`@/lib/ai/perspective-blueprint`）搬过来的用例 ────────────────

@@ -52,8 +52,13 @@ const FAMILY_DIMENSION_DEFINITIONS: Record<RoleFamilyKey, DimensionDefinition[]>
     { key: 'observability_incident', layer: 'family', weight: 2 },
     { key: 'project_deep_dive', layer: 'family', weight: 2 },
   ],
-  // 「其他」只挂通用层，族层为空。这不是失败态，是兜底。
-  other: [],
+  // 「其他」不是失败态：保留通用层，并补「岗位专业能力 + 项目深挖」两个族层维度。
+  // 没有它们，产品/运营/AI 应用等无法归入四个技术族的岗位只能出通用行为题；
+  // 两个维度也能把题数摊开，避免 10 题里 6 题挤在同一个维度上。
+  other: [
+    { key: 'role_professional', layer: 'family', weight: 2 },
+    { key: 'project_deep_dive', layer: 'family', weight: 2 },
+  ],
 };
 
 const GO_DIMENSION: DimensionDefinition = { key: 'go_fundamentals', layer: 'family', weight: 2 };
@@ -240,6 +245,69 @@ export function totalQuestions(counts: Record<string, number>): number {
   return Object.values(counts).reduce((sum, n) => sum + n, 0);
 }
 
+/**
+ * 把单维题数压进滑块上限，并把多出来的题数转给还有空间的维度。
+ *
+ * `planQuestionCounts` 只保证总数精确，不知道「单维最多 5 题」这条 UI/校验约束：
+ * 当用户把族层维度关到只剩一个时，10 题会全部堆到它身上（6 题 > 5），
+ * 滑块与 `validateQuestionCounts` 都会失效。这里做一次无损再平衡。
+ */
+export function capQuestionCountsPerDimension(
+  dimensions: DimensionConfig[],
+  counts: Record<string, number>,
+): Record<string, number> {
+  const result = { ...counts };
+  let overflow = 0;
+
+  for (const dimension of dimensions) {
+    const value = Math.max(0, Math.floor(result[dimension.key] ?? 0));
+    if (value > QUESTION_COUNT_PER_DIMENSION_MAX) {
+      overflow += value - QUESTION_COUNT_PER_DIMENSION_MAX;
+      result[dimension.key] = QUESTION_COUNT_PER_DIMENSION_MAX;
+    } else {
+      result[dimension.key] = value;
+    }
+  }
+
+  // 优先补给当前题数最少的维度，避免再次把某一维堆满。
+  while (overflow > 0) {
+    const target = dimensions
+      .filter((dimension) => (result[dimension.key] ?? 0) < QUESTION_COUNT_PER_DIMENSION_MAX)
+      .sort((left, right) => (result[left.key] ?? 0) - (result[right.key] ?? 0))[0];
+    if (!target) break;
+    result[target.key] = (result[target.key] ?? 0) + 1;
+    overflow -= 1;
+  }
+
+  return result;
+}
+
+/**
+ * 「其他」族的存量岗位没有 role_professional：题数够时从最大的通用维度借一题，
+ * 保证重新出题至少有一道岗位专业题。返回新对象，不修改入参；不满足条件时原样返回。
+ */
+export function ensureRoleProfessionalCoverage(
+  roleFamily: RoleFamilyKey,
+  dimensions: DimensionConfig[],
+  counts: Record<string, number>,
+): Record<string, number> {
+  if (roleFamily !== 'other') return counts;
+  if ((counts.role_professional ?? 0) > 0) return counts;
+  if (totalQuestions(counts) < QUESTION_COUNT_MIN) return counts;
+
+  // 只从通用层借：自定义/族层维度是用户明确配置的专业方向，不该被悄悄削掉。
+  const donor = dimensions
+    .filter((dimension) => dimension.layer === 'general' && (counts[dimension.key] ?? 0) > 1)
+    .sort((left, right) => (counts[right.key] ?? 0) - (counts[left.key] ?? 0))[0];
+  if (!donor) return counts;
+
+  return {
+    ...counts,
+    [donor.key]: counts[donor.key] - 1,
+    role_professional: 1,
+  };
+}
+
 // ── 面试官视角的逐维度题数 ────────────────────
 
 /**
@@ -248,8 +316,9 @@ export function totalQuestions(counts: Record<string, number>): number {
  * 规则：
  * - 只认配置里存在的维度 key，其余 key 一律丢弃（避免脏 key 混进题数与画像）；
  * - 通用层恒 ≥1 题——两层坐标可比的前提就是每场都测到；
- * - 总数落在 [QUESTION_COUNT_MIN, QUESTION_COUNT_MAX]，超出时从族层/自定义维度
- *   的最大项递减，不足时轮流补到通用层。
+ * - 单维不超过 `QUESTION_COUNT_PER_DIMENSION_MAX`，超出部分转给还有空间的维度；
+ * - 总数落在 [QUESTION_COUNT_MIN, QUESTION_COUNT_MAX]，不足时优先补一个没题目的
+ *   族层维度，再轮流补通用层。
  */
 export function normalizeQuestionCounts(
   dimensions: DimensionConfig[],
@@ -261,6 +330,9 @@ export function normalizeQuestionCounts(
     const value = typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
     result[dimension.key] = dimension.layer === 'general' ? Math.max(1, value) : value;
   }
+
+  // 先压单维上限；多出来的题数会转给还有空间的维度，总数不丢。
+  Object.assign(result, capQuestionCountsPerDimension(dimensions, result));
 
   let total = totalQuestions(result);
 
@@ -275,10 +347,16 @@ export function normalizeQuestionCounts(
     total -= 1;
   }
 
+  // 不足下限时先给还没题目的族层维度各 1 题，再轮流补通用层。
+  // 否则「4 个通用维 + 专业维」的岗位会拿到 5 道纯通用题，专业维永远空着。
   const general = dimensions.filter((dimension) => dimension.layer === 'general');
+  const unfilledFamily = dimensions.filter(
+    (dimension) => dimension.layer !== 'general' && (result[dimension.key] ?? 0) === 0,
+  );
+  const fillOrder = [...unfilledFamily, ...general];
   let cursor = 0;
-  while (total < QUESTION_COUNT_MIN && general.length > 0) {
-    result[general[cursor % general.length].key] += 1;
+  while (total < QUESTION_COUNT_MIN && fillOrder.length > 0) {
+    result[fillOrder[cursor % fillOrder.length].key] += 1;
     cursor += 1;
     total += 1;
   }

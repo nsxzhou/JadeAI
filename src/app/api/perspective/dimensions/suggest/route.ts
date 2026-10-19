@@ -3,7 +3,11 @@ import { generateText } from 'ai';
 import { extractJson } from '@/lib/ai/extract-json';
 import { dimensionSuggestionsOutputSchema } from '@/lib/ai/perspective-schema';
 import { AIConfigError, extractAIConfig, getJsonProviderOptions, getModel } from '@/lib/ai/provider';
-import { normalizeQuestionCounts, planQuestionCounts } from '@/lib/interview-core/dimension';
+import {
+  ensureRoleProfessionalCoverage,
+  normalizeQuestionCounts,
+  planQuestionCounts,
+} from '@/lib/interview-core/dimension';
 import { QUESTION_COUNT_DEFAULT } from '@/lib/interview-core/types';
 import { resolveRoleFamily } from '@/lib/interview-core/role-family';
 import { sessionDimensions } from '@/lib/interview/session-dimensions';
@@ -66,13 +70,17 @@ Shape: {"dimensions":[{"key":"...","questionCount":2,"description":"..."}]}`,
         : dimension;
     });
 
-    const questionCounts = normalizeQuestionCounts(
+    const questionCounts = ensureRoleProfessionalCoverage(
+      roleFamilyKey,
       merged,
-      Object.fromEntries(
-        merged.map((dimension) => [
-          dimension.key,
-          Math.max(1, Math.min(5, suggestions.get(dimension.key)?.questionCount ?? planned[dimension.key] ?? 1)),
-        ]),
+      normalizeQuestionCounts(
+        merged,
+        Object.fromEntries(
+          merged.map((dimension) => [
+            dimension.key,
+            Math.max(1, Math.min(5, suggestions.get(dimension.key)?.questionCount ?? planned[dimension.key] ?? 1)),
+          ]),
+        ),
       ),
     );
 

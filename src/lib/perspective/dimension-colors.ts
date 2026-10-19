@@ -60,6 +60,12 @@ const PRESET_COLORS: Record<string, DimensionColor> = {
     'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-300',
   ),
 
+  // ── 族层：其他（岗位专业能力） ──
+  role_professional: color(
+    'bg-stone-600',
+    'border-stone-200 bg-stone-50 text-stone-700 dark:border-stone-800 dark:bg-stone-950 dark:text-stone-300',
+  ),
+
   // ── 族层：前端 ──
   frontend_fundamentals: color(
     'bg-fuchsia-500',

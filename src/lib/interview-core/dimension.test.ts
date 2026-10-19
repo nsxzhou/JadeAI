@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   allocateByWeight,
   allocateQuestions,
+  capQuestionCountsPerDimension,
   planQuestionCounts,
   resolveDimensions,
   splitQuestionCountAcrossRounds,
@@ -81,10 +82,44 @@ describe('planQuestionCounts', () => {
     expect(backendFamily.every((d) => counts[d.key] >= 1)).toBe(true);
   });
 
-  it('族层为「其他」时剩余题数回到通用层，总数仍然精确', () => {
+  it('族层为空时剩余题数回到通用层，总数仍然精确', () => {
     const counts = planQuestionCounts({ general, family: [], total: 10 });
     expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(10);
     expect(general.reduce((sum, d) => sum + counts[d.key], 0)).toBe(10);
+  });
+
+  it('「其他」族的岗位专业维度拿到剩余题数', () => {
+    const counts = planQuestionCounts({
+      general,
+      family: [dim('role_professional', 2)],
+      total: 10,
+    });
+    expect(general.every((d) => counts[d.key] >= 1)).toBe(true);
+    expect(counts.role_professional).toBe(6);
+  });
+});
+
+describe('capQuestionCountsPerDimension', () => {
+  const general = [
+    dim('general_communication', 1, 'general'),
+    dim('general_logic', 1, 'general'),
+    dim('general_stress', 1, 'general'),
+    dim('general_learning', 1, 'general'),
+  ];
+
+  it('把超出单维上限的题数转给还有空间的维度，总数不丢', () => {
+    const dims = [...general, dim('role_professional', 2)];
+    const counts = capQuestionCountsPerDimension(dims, {
+      general_communication: 1,
+      general_logic: 1,
+      general_stress: 1,
+      general_learning: 1,
+      role_professional: 6,
+    });
+
+    expect(counts.role_professional).toBe(5);
+    expect(Object.values(counts).reduce((sum, n) => sum + n, 0)).toBe(10);
+    expect(Math.max(...Object.values(counts))).toBeLessThanOrEqual(5);
   });
 });
 
@@ -110,8 +145,17 @@ describe('resolveDimensions', () => {
     expect(java).not.toContain('go_fundamentals');
   });
 
-  it('「其他」族只有通用层', () => {
-    expect(resolveDimensions('other', 'none').every((d) => d.layer === 'general')).toBe(true);
+  it('「其他」族保留通用层，并补一个岗位专业能力维度', () => {
+    const keys = resolveDimensions('other', 'none').map((d) => d.key);
+    expect(keys).toEqual(expect.arrayContaining([
+      'general_communication',
+      'general_logic',
+      'general_stress',
+      'general_learning',
+      'role_professional',
+    ]));
+    expect(resolveDimensions('other', 'none').find((d) => d.key === 'role_professional')?.layer)
+      .toBe('family');
   });
 });
 

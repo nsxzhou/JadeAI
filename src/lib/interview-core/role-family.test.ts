@@ -70,7 +70,7 @@ describe('familyDimensionKeys', () => {
     expect(familyDimensionKeys('backend', 'go')).toContain('go_fundamentals');
   });
 
-  it('其他族没有族层维度', () => {
-    expect(familyDimensionKeys('other', 'none')).toEqual([]);
+  it('其他族保留岗位专业能力与项目深挖两个维度', () => {
+    expect(familyDimensionKeys('other', 'none')).toEqual(['role_professional', 'project_deep_dive']);
   });
 });

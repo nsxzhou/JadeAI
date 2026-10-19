@@ -17,8 +17,15 @@ describe('presetDimensionKeys', () => {
     expect(keys).not.toContain('backend_fundamentals');
   });
 
-  it('「其他」岗位族只挂通用层', () => {
-    expect(presetDimensionKeys('other', 'none')).toHaveLength(4);
+  it('「其他」岗位族挂通用层 + 岗位专业能力 + 项目深挖', () => {
+    expect(presetDimensionKeys('other', 'none')).toEqual([
+      'general_communication',
+      'general_logic',
+      'general_stress',
+      'general_learning',
+      'role_professional',
+      'project_deep_dive',
+    ]);
   });
 });
 
@@ -143,6 +150,25 @@ describe('normalizeJobCoordinates', () => {
     expect(coords.questionCounts.go_fundamentals).toBe(2);
     expect(Object.values(coords.questionCounts).reduce((sum, n) => sum + n, 0))
       .toBeGreaterThanOrEqual(5);
+  });
+
+  it('旧「其他」岗位从通用层借一题给岗位专业能力', () => {
+    const coords = normalizeJobCoordinates({
+      title: 'AI 产品经理',
+      jobDescription: '负责 B 端 AI 产品',
+      roleFamilyKey: 'other',
+      primaryStack: 'none',
+      questionCounts: {
+        general_communication: 2,
+        general_logic: 1,
+        general_stress: 1,
+        general_learning: 1,
+      },
+      dimensions: [],
+    });
+
+    expect(coords.questionCounts.role_professional).toBe(1);
+    expect(Object.values(coords.questionCounts).reduce((sum, n) => sum + n, 0)).toBe(5);
   });
 
   it('questionCounts 损坏时回落旧坐标推导，不抛错', () => {

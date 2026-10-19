@@ -81,8 +81,9 @@ export const ROLE_FAMILIES: Record<RoleFamilyKey, RoleFamilyDefinition> = {
   // 题型（category）与评分坐标（dimension）是两件事，这里放行的是「怎么问」，不是「算什么分」。
   other: {
     key: 'other',
-    requiredTopics: [],
-    requiredCategories: [],
+    requiredTopics: ['岗位专业能力', '项目深挖'],
+    // 「其他」也要有至少一道项目深挖，否则 8 题以上会退化成纯行为面。
+    requiredCategories: ['project_deep_dive'],
     allowedCategories: [
       'go_fundamentals',
       'backend_fundamentals',

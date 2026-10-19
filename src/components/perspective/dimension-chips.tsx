@@ -61,8 +61,9 @@ export function DimensionChips({
   function togglePreset(key: string) {
     if (selectedByKey.has(key)) {
       const current = selectedByKey.get(key);
-      // 通用层恒定覆盖，不允许移除
-      if (current?.layer === 'general') return;
+      // 通用层恒定覆盖；「其他」族的岗位专业能力是专业题入口，也不允许移除
+      // （不想出专业题就把滑块调到 0，维度本身仍保留在坐标里）。
+      if (current?.layer === 'general' || current?.key === 'role_professional') return;
       emit(
         value.filter((dimension) => dimension.key !== key),
         questionCounts,
@@ -173,6 +174,7 @@ export function DimensionChips({
                 key={key}
                 type="button"
                 onClick={() => togglePreset(key)}
+                title={selected && key === 'role_professional' ? t('professionalLocked') : undefined}
                 className={cn(
                   'inline-flex cursor-pointer items-center gap-1 rounded-full border px-3 py-1.5 text-sm transition-colors',
                   selected

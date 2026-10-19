@@ -11,7 +11,10 @@
  */
 import type { DimensionConfig, PrimaryStack, RoleFamilyKey } from '@/lib/interview-core/types';
 import { QUESTION_COUNT_MAX, QUESTION_COUNT_MIN } from '@/lib/interview-core/types';
-import { resolveDimensions } from '@/lib/interview-core/dimension';
+import {
+  ensureRoleProfessionalCoverage,
+  resolveDimensions,
+} from '@/lib/interview-core/dimension';
 import { normalizePrimaryStack, normalizeRoleFamily } from '@/lib/interview-core/role-family';
 import { legacyPerspectiveCoordinates, type PerspectiveCoordinates } from '@/lib/interview-core/perspective-legacy';
 
@@ -134,19 +137,39 @@ export function normalizeJobCoordinates(job: {
     });
   }
 
+  const stored = Object.fromEntries(
+    dimensions.map((dimension) => [dimension.key, Math.max(0, Math.floor(storedCounts[dimension.key] ?? 0))]),
+  );
+
+  // 升级兼容：旧「其他」岗位的 dimensions 里根本没有 role_professional，题数全落在
+  // 通用层。读的时候借一题给专业维，否则重新出题仍然只会得到通用行为题。
+  // 已经显式保存过 role_professional（哪怕设成 0）的不动，尊重用户配置。
+  const alreadyHasProfessional = storedDimensions(job.dimensions)
+    .some((dimension) => dimension.key === 'role_professional');
+  const questionCounts = alreadyHasProfessional
+    ? stored
+    : ensureRoleProfessionalCoverage(roleFamilyKey, dimensions, stored);
+
   return {
     roleFamilyKey,
     primaryStack,
     dimensions,
-    questionCounts: Object.fromEntries(
-      dimensions.map((dimension) => [dimension.key, Math.max(0, Math.floor(storedCounts[dimension.key] ?? 0))]),
-    ),
+    questionCounts,
   };
 }
 
 function storedDimensions(raw: unknown): DimensionConfig[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter(
+  // sqlite 的 json 列是数组，pg 的 text 列是字符串；两种形态都读成数组。
+  let value: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(value)) return [];
+  return value.filter(
     (item): item is DimensionConfig =>
       Boolean(item) && typeof item === 'object' && typeof (item as DimensionConfig).key === 'string',
   );
