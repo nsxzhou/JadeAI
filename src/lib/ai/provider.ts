@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createContentRecoveryFetch } from '@/lib/ai/recover-split-content';
 
 export interface AIConfig {
   provider: string;
@@ -34,7 +35,14 @@ export function getModel(config: AIConfig, modelOverride?: string) {
       return p(modelId);
     }
     default: {
-      const p = createOpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
+      // 有些兼容网关会把响应从第一个 </think> 处劈成 reasoning_content + content，
+      // 模型正文里一旦出现这个字面量（比如题目在考「思考标签过滤」），JSON 就会缺头。
+      // 在响应层拼回去，后续解析不必知道这个网关毛病。
+      const p = createOpenAI({
+        apiKey: config.apiKey,
+        baseURL: config.baseURL,
+        fetch: createContentRecoveryFetch(),
+      });
       return p.chat(modelId);
     }
   }

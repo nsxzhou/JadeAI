@@ -14,7 +14,7 @@
 import { generateText, type LanguageModel } from 'ai';
 import { extractJson } from '@/lib/ai/extract-json';
 import type { getJsonProviderOptions } from '@/lib/ai/provider';
-import { interviewBlueprintOutputSchema, questionsOutputSchema } from '@/lib/ai/perspective-schema';
+import { interviewBlueprintOutputSchema, questionsOutputSchema, type QuestionsOutput } from '@/lib/ai/perspective-schema';
 import { buildDimensionQuestionsPrompt, buildInterviewBlueprintPrompt } from '@/lib/ai/perspective-prompts';
 import {
   assembleGeneratedQuestions,
@@ -39,6 +39,10 @@ import type {
 const QUESTION_CHUNK_SIZE = 2;
 /** 同时最多发几路题目请求，避免一次打满供应商的并发/限流。 */
 const QUESTION_CONCURRENCY = 3;
+/** 单次调用的输出预算。 */
+const OUTPUT_TOKENS = 8192;
+/** 输出被截断时的重试预算（只升一级，避免无限烧 token）。 */
+const OUTPUT_TOKENS_ESCALATED = 16384;
 /** 蓝图失败后最多尝试几次（含第一次）。 */
 const BLUEPRINT_ATTEMPTS = 3;
 /** 多题批次失败后的重试次数。 */
@@ -68,6 +72,41 @@ RETRY NOTE — the previous response was rejected: ${message}
 ${instruction}
 ${closing}
 Return only one complete JSON object.`;
+}
+
+interface JsonTextResult {
+  text: string;
+  finishReason: string;
+}
+
+/**
+ * 调一次模型，并把「输出被预算截断」当成可处理的情况：翻倍预算再要一次。
+ * 截断的唯一可靠信号是 finishReason——模型不会主动告诉你它没写完。
+ */
+async function generateJsonText(args: {
+  model: LanguageModel;
+  providerOptions: ProviderOptions;
+  system: string;
+  prompt: string;
+}): Promise<JsonTextResult> {
+  const result = await generateText({ ...args, maxOutputTokens: OUTPUT_TOKENS });
+  if (result.finishReason !== 'length') {
+    return { text: result.text, finishReason: result.finishReason };
+  }
+
+  console.warn(
+    '[blueprint] output truncated at %d tokens, retrying with %d',
+    OUTPUT_TOKENS,
+    OUTPUT_TOKENS_ESCALATED,
+  );
+  const escalated = await generateText({ ...args, maxOutputTokens: OUTPUT_TOKENS_ESCALATED });
+  return { text: escalated.text, finishReason: escalated.finishReason };
+}
+
+/** 把调用侧的 finishReason / 输出长度附到错误里，否则日志里只剩「JSON 解析失败」。 */
+function withCallDiagnostics(error: unknown, result: JsonTextResult): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(`${message} [finishReason=${result.finishReason}, chars=${result.text.length}]`);
 }
 
 function splitIntoChunks<T>(items: T[], size: number): T[][] {
@@ -154,9 +193,9 @@ export async function generateValidatedBlueprint(
   let lastError: unknown = null;
   for (let attempt = 0; attempt < BLUEPRINT_ATTEMPTS; attempt += 1) {
     try {
-      const result = await generateText({
+      const result = await generateJsonText({
         model: input.model,
-        maxOutputTokens: 8192,
+        providerOptions: input.providerOptions,
         system: attempt === 0
           ? system
           : withRetryNote(
@@ -166,25 +205,31 @@ export async function generateValidatedBlueprint(
             'Do not omit slots, dimensions or evidence entries.',
           ),
         prompt,
-        providerOptions: input.providerOptions,
       });
 
-      const extracted = canonicalizeBlueprintEvidence(
-        extractJson(result.text, interviewBlueprintOutputSchema),
-      );
-      const blueprint = validateBlueprint(extracted, {
-        questionCount: input.questionCount,
-        dimensions: input.dimensions,
-        roleFamily: input.roleFamily,
-        primaryStack: input.primaryStack,
-        questionCounts: input.questionCounts,
-        enforceJdCoverage: input.enforceJdCoverage,
-        // 生成管线用覆盖式校验：prompt 仍然按精确配额要求模型，但模型在 17 题、
-        // 8 个维度、三个来源同时约束下很难精确命中；一次偏差就整场失败不值得。
-        // 覆盖式仍保证每个启用维度都有题、总数精确、来源不全是简历。
-        strictDimensionCounts: false,
-        strictSourceCoverage: false,
-      });
+      let blueprint: InterviewBlueprint;
+      try {
+        blueprint = validateBlueprint(
+          canonicalizeBlueprintEvidence(
+            extractJson(result.text, interviewBlueprintOutputSchema),
+          ),
+          {
+            questionCount: input.questionCount,
+            dimensions: input.dimensions,
+            roleFamily: input.roleFamily,
+            primaryStack: input.primaryStack,
+            questionCounts: input.questionCounts,
+            enforceJdCoverage: input.enforceJdCoverage,
+            // 生成管线用覆盖式校验：prompt 仍然按精确配额要求模型，但模型在 17 题、
+            // 8 个维度、三个来源同时约束下很难精确命中；一次偏差就整场失败不值得。
+            // 覆盖式仍保证每个启用维度都有题、总数精确、来源不全是简历。
+            strictDimensionCounts: false,
+            strictSourceCoverage: false,
+          },
+        );
+      } catch (error) {
+        throw withCallDiagnostics(error, result);
+      }
       input.onProgress?.({
         type: 'progress',
         phase: 'blueprint',
@@ -284,9 +329,9 @@ async function generateQuestionChunkOnce(
     otherSlots: siblingSlots,
   });
 
-  const result = await generateText({
+  const result = await generateJsonText({
     model: input.model,
-    maxOutputTokens: 8192,
+    providerOptions: input.providerOptions,
     system: lastError
       ? withRetryNote(
         system,
@@ -296,10 +341,14 @@ async function generateQuestionChunkOnce(
       )
       : system,
     prompt,
-    providerOptions: input.providerOptions,
   });
 
-  const parsed = extractJson(result.text, questionsOutputSchema);
+  let parsed: QuestionsOutput;
+  try {
+    parsed = extractJson(result.text, questionsOutputSchema);
+  } catch (error) {
+    throw withCallDiagnostics(error, result);
+  }
   if (parsed.questions.length !== slots.length) {
     throw new Error(`Expected ${slots.length} question(s); received ${parsed.questions.length}.`);
   }

@@ -33,7 +33,7 @@ import {
   runCandidateSetup,
   type CandidateSetupProgress,
 } from '@/lib/perspective/candidate-setup-flow';
-import { consumeQuestionGenerationStream } from '@/lib/perspective/generation-client';
+import { consumeQuestionGenerationStream, generationFailureMessage } from '@/lib/perspective/generation-client';
 import {
   generationProgressPercent,
   type GenerationProgress,
@@ -253,7 +253,9 @@ export function CandidateDialog({
                 : 'errors.parseFailed';
       toast.error(t(failureKey), {
         description:
-          failureKey === 'errors.generateFailed' ? t('errors.generateFailedHint') : undefined,
+          failureKey === 'errors.generateFailed'
+            ? generationFailureMessage(error.cause, t('errors.generateFailedHint'))
+            : undefined,
       });
     }
   }

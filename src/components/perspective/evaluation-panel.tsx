@@ -138,7 +138,9 @@ export function EvaluationPanel({
         }
         if (!res.ok || data.error) {
           setProgress({ done: data.evaluated ?? 0, total: data.total ?? 0 });
-          toast.error(t('errors.generateFailed'));
+          toast.error(t('errors.generateFailed'), {
+            description: typeof data.error === 'string' ? data.error : undefined,
+          });
           return;
         }
         setProgress({ done: data.evaluated ?? 0, total: data.total ?? 0 });

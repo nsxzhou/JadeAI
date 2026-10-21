@@ -1309,7 +1309,7 @@
       "loadFailed": "加载失败",
       "saveFailed": "保存失败",
       "generateFailed": "生成失败，请检查 AI 配置后重试",
-      "generateFailedHint": "已自动重试仍失败。请检查模型是否支持 JSON / 结构化输出；第三方模型可换用支持 JSON 输出的模型，或稍后重试。",
+      "generateFailedHint": "已自动重试仍失败。具体原因见上方提示；若反复出现，请检查模型 / Base URL / API Key 配置。",
       "parseFailed": "简历解析失败，请换一份文件或改用粘贴文本",
       "resumeUnavailable": "无法读取这份简历，请换一份，或改用上传 / 粘贴"
     },

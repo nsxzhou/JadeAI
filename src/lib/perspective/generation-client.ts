@@ -17,6 +17,17 @@ async function responseError(response: Response): Promise<Error> {
   return new Error(`Question generation failed (HTTP ${response.status})`);
 }
 
+/**
+ * 给 toast 用的失败原因。
+ *
+ * 服务端只会返回可展示的文案（`userFacingGenerationError`），比前端写死的「请检查模型
+ * 是否支持 JSON」准得多；拿不到时才回退到固定提示。
+ */
+export function generationFailureMessage(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message.trim() : '';
+  return message || fallback;
+}
+
 function parseLine(line: string): GenerationEvent | null {
   if (!line.trim()) return null;
   try {

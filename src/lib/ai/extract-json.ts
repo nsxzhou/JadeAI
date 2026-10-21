@@ -63,15 +63,29 @@ function repairUnescapedQuotes(text: string): string {
   return out.join('');
 }
 
-/** Strip <think>...</think> reasoning blocks (qwen3, deepseek-r1, etc.) */
+/**
+ * Strip a LEADING reasoning block (qwen3, deepseek-r1, …).
+ *
+ * 只从开头撕：正文里出现的 `</think>` 往往是被讨论的技术名词（题目就在考「思考标签
+ * 过滤」，参考答案必须提到这个标记）。旧实现 `^[\s\S]*?</think>` 会把 JSON 开头的
+ * `{"questions":[…` 一并吃掉，结果是一段没有头的 JSON，怎么 repair 都救不回来。
+ * 只有「整段以思考标签开头」才可能是推理块。
+ */
 function stripThinkBlocks(text: string): string {
-  // Remove complete <think>...</think> pairs
-  let out = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
-  // Remove dangling unclosed <think>... at start (reasoning that wasn't closed)
-  out = out.replace(/^[\s\S]*?<\/think>/i, '');
-  // Some models emit `<|thinking|>...<|/thinking|>` or similar
-  out = out.replace(/<\|?thinking\|?>[\s\S]*?<\|?\/?thinking\|?>/gi, '');
-  return out.trim();
+  const open = /^<\|?\s*(?:think|thinking|reasoning)\s*\|?>/i;
+  const close = /<\s*\/\s*(?:think|thinking|reasoning)\s*>|<\|\s*\/\s*(?:think|thinking|reasoning)\s*\|>/i;
+
+  let out = text.trim();
+  while (open.test(out)) {
+    const closing = close.exec(out);
+    if (!closing) {
+      // 未闭合的推理：从第一个 JSON 起始符开始保留，没有就整段丢弃
+      const brace = out.search(/[{\[]/);
+      return brace === -1 ? '' : out.slice(brace).trim();
+    }
+    out = out.slice(closing.index + closing[0].length).trim();
+  }
+  return out;
 }
 
 /** Strip markdown code fences from text */
@@ -111,14 +125,37 @@ function normalizeKeys(value: unknown): unknown {
   return value;
 }
 
+/** 最近一次解析/校验为什么失败。截断与 schema 不匹配必须能分清。 */
+let lastParseError: unknown = null;
+
 /** Try to parse text as JSON, return null on failure */
 function tryParse<T>(text: string, schema: ZodType<T>): T | null {
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(text);
-    return schema.parse(normalizeKeys(parsed));
-  } catch {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    lastParseError = error;
     return null;
   }
+  try {
+    return schema.parse(normalizeKeys(parsed));
+  } catch (error) {
+    lastParseError = error;
+    return null;
+  }
+}
+
+/** 把 zod / 语法错误压成一句能进日志的原因，不泄露简历原文。 */
+function describeFailure(error: unknown): string {
+  if (!error) return '';
+  const issues = (error as { issues?: Array<{ path?: unknown[]; message?: string }> }).issues;
+  if (Array.isArray(issues) && issues.length > 0) {
+    return issues
+      .slice(0, 3)
+      .map((issue) => `${(issue.path ?? []).join('.') || '(root)'}: ${issue.message ?? 'invalid'}`)
+      .join('; ');
+  }
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -126,6 +163,7 @@ function tryParse<T>(text: string, schema: ZodType<T>): T | null {
  * Handles: code fences, unescaped quotes, truncated JSON, extra text.
  */
 export function extractJson<T>(text: string, schema: ZodType<T>): T {
+  lastParseError = null;
   const trimmed = text.trim();
 
   // Step 0: Strip reasoning blocks (qwen3, deepseek-r1)
@@ -188,6 +226,24 @@ export function extractJson<T>(text: string, schema: ZodType<T>): T {
     } catch {}
   }
 
-  console.error('[extractJson] FULL failed text:\n', cleaned);
-  throw new Error(`Failed to extract valid JSON from AI response (length=${text.length})`);
+  const failure = describeFailure(lastParseError);
+  const head = cleaned.trimStart();
+  const tail = cleaned.trimEnd();
+  const hints = [
+    // 头部缺失 = 内容被网关/清洗逻辑从中间切掉，和「输出太长」是两种病
+    tail.endsWith('}') && !head.startsWith('{') ? 'missing the opening of the JSON object' : '',
+    head.startsWith('{') && !/[}\]]$/.test(tail) ? 'looks truncated (no closing brace)' : '',
+  ].filter(Boolean);
+
+  console.error(
+    '[extractJson] failed (length=%d%s):\n%s',
+    text.length,
+    hints.length ? `, ${hints.join('; ')}` : '',
+    cleaned.slice(0, 2000),
+  );
+  throw new Error(
+    `Failed to extract valid JSON from AI response (length=${text.length}${
+      hints.length ? `, ${hints.join('; ')}` : ''
+    })${failure ? ` — ${failure}` : ''}`,
+  );
 }

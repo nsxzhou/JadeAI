@@ -35,7 +35,7 @@ import {
 import { useFingerprint } from '@/hooks/use-fingerprint';
 import { getAIHeaders } from '@/stores/settings-store';
 import { dimensionColor } from '@/lib/perspective/dimension-colors';
-import { consumeQuestionGenerationStream } from '@/lib/perspective/generation-client';
+import { consumeQuestionGenerationStream, generationFailureMessage } from '@/lib/perspective/generation-client';
 import {
   generationProgressPercent,
   type GenerationProgress,
@@ -244,9 +244,9 @@ export function InterviewStage({
       setCandidate(updated);
       setIndex(0);
       setDraft('');
-    } catch {
+    } catch (error) {
       toast.error(t('errors.generateFailed'), {
-        description: t('errors.generateFailedHint'),
+        description: generationFailureMessage(error, t('errors.generateFailedHint')),
       });
     } finally {
       setRegenerating(false);

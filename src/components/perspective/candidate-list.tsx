@@ -53,7 +53,7 @@ import { useFingerprint } from '@/hooks/use-fingerprint';
 import { getAIHeaders } from '@/stores/settings-store';
 import { sortCandidatesForSidebar } from '@/lib/perspective/summary';
 import { stageFromSummary, type CandidateStage } from '@/lib/perspective/candidate-stage';
-import { consumeQuestionGenerationStream } from '@/lib/perspective/generation-client';
+import { consumeQuestionGenerationStream, generationFailureMessage } from '@/lib/perspective/generation-client';
 import {
   generationProgressPercent,
   type GenerationProgress,
@@ -141,9 +141,9 @@ export function CandidateList({ jobId }: { jobId: string }) {
       });
       await consumeQuestionGenerationStream(res, setGenerationProgress);
       router.push(`/interview/perspective/${jobId}/c/${id}/stage`);
-    } catch {
+    } catch (error) {
       toast.error(t('errors.generateFailed'), {
-        description: t('errors.generateFailedHint'),
+        description: generationFailureMessage(error, t('errors.generateFailedHint')),
       });
       setGeneratingFor(null);
       setGenerationProgress(null);

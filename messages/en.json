@@ -1309,7 +1309,7 @@
       "loadFailed": "Failed to load",
       "saveFailed": "Failed to save",
       "generateFailed": "Generation failed — check your AI settings and retry",
-      "generateFailedHint": "Automatic retries were exhausted. Check that the model supports JSON / structured output; for third-party endpoints, try a model with JSON support or retry later.",
+      "generateFailedHint": "Automatic retries were exhausted. See the details above; if it keeps happening, check your model, base URL and API key.",
       "parseFailed": "Could not parse the resume — try another file or paste the text",
       "resumeUnavailable": "Couldn't read that resume. Pick another one, or upload / paste the text instead."
     },
