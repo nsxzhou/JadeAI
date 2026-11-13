@@ -11,6 +11,13 @@ import { useUIStore } from '@/stores/ui-store';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 
+/**
+ * Same reason as `MENU_ID` in locale-switcher: Radix's own `aria-controls` comes
+ * from `useId()` and diverges between SSR and hydration whenever the two fiber
+ * trees have a different shape. Pin it so the header never logs a mismatch.
+ */
+const MOBILE_NAV_ID = 'jade-mobile-nav';
+
 const NAV_ITEMS: { href: string; i18nKey: string; match: string; tourId?: string }[] = [
   { href: '/dashboard', i18nKey: 'dashboard.nav', match: '/dashboard' },
   { href: '/templates', i18nKey: 'templates.nav', match: '/templates', tourId: 'dash-templates' },
@@ -75,12 +82,12 @@ export function Header() {
           {/* Mobile menu */}
           <div className="md:hidden">
             <Sheet>
-              <SheetTrigger asChild>
+              <SheetTrigger asChild aria-controls={MOBILE_NAV_ID}>
                 <Button variant="ghost" size="icon" className="h-10 w-10">
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="right" className="w-64">
+              <SheetContent id={MOBILE_NAV_ID} side="right" className="w-64">
                 <nav className="flex flex-col gap-2 pt-8">
                   {NAV_ITEMS.map((item) => {
                     const isActive = item.href === activeHref;
