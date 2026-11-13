@@ -111,11 +111,17 @@ function MinimalThumb() {
 function ProfessionalThumb() {
   return (
     <div className="flex h-full flex-col p-2.5" style={{ fontFamily: 'serif' }}>
-      {/* Centered header with gradient divider */}
-      <div className="mb-1.5 text-center">
-        <div className="mx-auto h-1.5 w-14 rounded-full bg-[#1e3a5f]" />
-        <div className="mx-auto mt-0.5 h-1 w-8 rounded-full bg-zinc-400" />
-        <div className="mx-auto mt-1 h-0.5 w-full rounded-full" style={{ background: 'linear-gradient(90deg, transparent, #1e3a5f, transparent)' }} />
+      {/* 左侧姓名/联系方式，右侧照片 */}
+      <div className="mb-1.5">
+        <div className="flex items-start justify-between gap-1">
+          <div className="flex-1">
+            <div className="h-1.5 w-14 rounded-full bg-[#1e3a5f]" />
+            <div className="mt-0.5 h-1 w-8 rounded-full bg-zinc-400" />
+            <div className="mt-0.5 h-0.5 w-full rounded-full bg-zinc-300" />
+          </div>
+          <div className="h-4 w-3 shrink-0 rounded-sm border border-[#1e3a5f] bg-zinc-100" />
+        </div>
+        <div className="mt-1 h-0.5 w-full rounded-full" style={{ background: 'linear-gradient(90deg, #1e3a5f, rgba(30,58,95,0.15))' }} />
       </div>
       {/* Sections with trailing lines */}
       <div className="space-y-1.5 flex-1">

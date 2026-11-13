@@ -25,13 +25,10 @@ export function ProfessionalTemplate({ resume }: { resume: Resume }) {
 
   return (
     <div className="mx-auto max-w-[210mm] bg-white shadow-lg" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
-      {/* Header */}
-      <div className="mb-6 text-center">
-        <div className="flex items-center justify-center gap-4">
-          {pi.avatar && (
-            <AvatarImage src={pi.avatar} avatarStyle={resume.themeConfig?.avatarStyle} size={72} className="shrink-0" style={{ border: '2px solid #1e3a5f' }} />
-          )}
-          <div>
+      {/* Header：左侧个人信息，右侧照片 */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between gap-6">
+          <div className="min-w-0 flex-1 text-left">
             <h1 className="text-3xl font-bold tracking-wide" style={{ color: '#1e3a5f' }}>
               {pi.fullName || 'Your Name'}
             </h1>
@@ -40,19 +37,22 @@ export function ProfessionalTemplate({ resume }: { resume: Resume }) {
                 {pi.jobTitle}
               </p>
             )}
+            {contacts.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-1.5 text-sm text-zinc-500">
+                {contacts.map((c, i) => (
+                  <span key={i} className="flex items-center gap-1.5">
+                    {c}
+                    {i < contacts.length - 1 && <span className="text-zinc-300">|</span>}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
+          {pi.avatar && (
+            <AvatarImage src={pi.avatar} avatarStyle={resume.themeConfig?.avatarStyle} size={88} className="shrink-0" style={{ border: '2px solid #1e3a5f' }} />
+          )}
         </div>
-        {contacts.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center justify-center gap-x-1.5 text-sm text-zinc-500">
-            {contacts.map((c, i) => (
-              <span key={i} className="flex items-center gap-1.5">
-                {c}
-                {i < contacts.length - 1 && <span className="text-zinc-300">|</span>}
-              </span>
-            ))}
-          </div>
-        )}
-        <div className="mt-4 h-[2px] w-full" style={{ background: 'linear-gradient(90deg, transparent 0%, #1e3a5f 20%, #1e3a5f 80%, transparent 100%)' }} />
+        <div className="mt-4 h-[2px] w-full" style={{ background: 'linear-gradient(90deg, #1e3a5f 0%, #1e3a5f 65%, transparent 100%)' }} />
       </div>
 
       {/* Sections */}
