@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { GENERAL_DIMENSIONS, familyDimensions } from './dimension';
 import { ROLE_FAMILY_KEYS, PRIMARY_STACKS } from './role-family';
+import { interviewQuestionCategorySchema } from './types';
 
 const zh = JSON.parse(readFileSync('messages/zh.json', 'utf8'));
 const en = JSON.parse(readFileSync('messages/en.json', 'utf8'));
@@ -35,5 +36,14 @@ describe('dimension i18n coverage', () => {
   it('反问环节有题型文案（它不是评分坐标，只作题型标签）', () => {
     expect(zh.perspective.dimensions.candidate_questions).toBeTruthy();
     expect(en.perspective.dimensions.candidate_questions).toBeTruthy();
+  });
+
+  // 题目详情页的题型标签直接复用维度 label（同一个 key，只有一份文案）。
+  // 新增题型时若忘了补文案，这里会先失败，而不是留到运行时抛 MISSING_MESSAGE。
+  it('每个题型 key 都能取到维度 label', () => {
+    for (const key of interviewQuestionCategorySchema.options) {
+      expect(zh.perspective.dimensions[key], `zh category label missing: ${key}`).toBeTruthy();
+      expect(en.perspective.dimensions[key], `en category label missing: ${key}`).toBeTruthy();
+    }
   });
 });

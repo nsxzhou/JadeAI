@@ -446,7 +446,7 @@ export function InterviewStage({
             {current.category && (
               <Badge variant="outline" className={color.chip}>
                 <span className={cn('mr-1 h-1.5 w-1.5 rounded-full', color.dot)} />
-                {t(`questions.categories.${current.category}`)}
+                {t(`dimensions.${current.category}`)}
               </Badge>
             )}
             <span>
